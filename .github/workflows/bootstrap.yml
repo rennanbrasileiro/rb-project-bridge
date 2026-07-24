@@ -1,0 +1,88 @@
+name: Bootstrap and build desktop application
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Reassemble and verify source package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem 'bootstrap/source.part*.b64' | Sort-Object Name
+          if ($parts.Count -ne 12) {
+            throw "Expected 12 source parts, found $($parts.Count)."
+          }
+
+          $encoded = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join ''
+          [IO.File]::WriteAllBytes('source.zip', [Convert]::FromBase64String($encoded))
+
+          $expected = 'e48ff199452b24d93fab22e182bb8ed9f3d3a25ad239940c6587389826ef9aeb'
+          $actual = (Get-FileHash 'source.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Source checksum mismatch. Expected $expected, received $actual."
+          }
+
+          New-Item -ItemType Directory -Path 'extracted' -Force | Out-Null
+          Expand-Archive 'source.zip' 'extracted' -Force
+          $sourceRoot = Join-Path $PWD 'extracted/rb-project-bridge-0.1.1'
+          if (-not (Test-Path (Join-Path $sourceRoot 'package.json'))) {
+            throw 'The source package does not contain the expected project root.'
+          }
+
+          robocopy $sourceRoot $PWD /E /NFL /NDL /NJH /NJS /NP
+          $copyExit = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          if ($copyExit -ge 8) {
+            throw "Source copy failed with robocopy exit code $copyExit."
+          }
+
+          Remove-Item 'bootstrap', 'extracted', 'source.zip' -Recurse -Force
+          Remove-Item '.github/workflows/bootstrap.yml' -Force
+
+      - name: Publish complete source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Publish RB Project Bridge 0.1.1 source'
+          git push origin main
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate source
+        run: npm run check
+
+      - name: Build Windows applications
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rb-project-bridge-windows
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
