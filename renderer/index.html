@@ -13,6 +13,17 @@
     <section class="card">
       <h2>1. Conectar contas</h2>
       <div class="row"><button id="base44Login">Conectar Base44</button><span id="base44Status">Não conectado</span></div>
+      <div id="base44AuthBox" class="auth-box hidden" aria-live="polite">
+        <div>
+          <strong>Autorize a Base44 no navegador</strong>
+          <p>Confirme este código:</p>
+          <code id="base44DeviceCode">—</code>
+        </div>
+        <div class="row auth-actions">
+          <button id="copyBase44Code" type="button">Copiar código</button>
+          <button id="openBase44Device" type="button">Abrir autorização</button>
+        </div>
+      </div>
       <div class="row"><button id="githubLogin">Conectar GitHub</button><span id="githubStatus">Não conectado</span></div>
       <div id="githubAuthBox" class="auth-box hidden" aria-live="polite">
         <div>
@@ -24,10 +35,6 @@
           <button id="copyGitHubCode" type="button">Copiar código</button>
           <button id="openGitHubDevice" type="button">Abrir autorização</button>
         </div>
-      </div>
-      <div id="base44AuthBox" class="auth-box hidden" aria-live="polite">
-        <strong>Autorização Base44 aberta no navegador.</strong>
-        <p>Conclua o login e volte ao aplicativo.</p>
       </div>
     </section>
     <section class="card"><h2>2. Projeto e destino</h2><label>Projeto Base44<select id="project"></select></label><label>Pasta de entrega<div class="row"><input id="output" readonly><button id="chooseOutput">Selecionar</button></div></label></section>
