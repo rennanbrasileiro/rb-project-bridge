@@ -19,7 +19,12 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run check
+      - name: Validate syntax
+        run: node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js
+      - name: Validate preview repair
+        run: node --test tests/preview-repair.test.cjs
+      - name: Run complete suite
+        run: npm test
 
   windows:
     needs: validate
