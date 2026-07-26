@@ -6,7 +6,7 @@ on:
     paths:
       - ".github/workflows/bootstrap.yml"
   pull_request:
-    types: [opened]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -38,9 +38,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $parts = Get-ChildItem 'bootstrap/source.fixed.*.b64' | Sort-Object Name
-          if ($parts.Count -ne 17) {
-            throw "Expected 17 fixed source parts, found $($parts.Count)."
+          $partNames = @(
+            '01', '02', '03a', '03b', '04', '05', '06', '07', '08',
+            '09', '10', '11', '12', '13', '14', '15', '16', '17'
+          )
+
+          $parts = $partNames | ForEach-Object {
+            Get-Item "bootstrap/source.fixed.$_.b64"
           }
 
           $encoded = ($parts | ForEach-Object {
