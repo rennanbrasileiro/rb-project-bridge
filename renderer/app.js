@@ -34,7 +34,7 @@ $('start').onclick = async () => {
     const backup = lastResult.previousDefaultBranch?.backupBranch;
     setResult(reused ? `Atualizado com segurança: ${lastResult.github.fullName}. Backup: ${backup}.` : `Criado e concluído: ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success');
     $('resultActions').classList.remove('hidden');
-  } catch (error) { setResult(error.message, 'error'); log(`ERRO: ${error.message}`); } finally { $('start').disabled = false; }
+  } catch (error) { const violations = error.details?.violations || []; const suffix = violations.length ? `\nViolações detectadas:\n- ${violations.join('\n- ')}` : ''; setResult(error.message, 'error'); log(`ERRO: ${error.message}${suffix}`); } finally { $('start').disabled = false; }
 };
 $('openPreview').onclick = async () => { if (!lastResult?.paths?.previewDir) return setResult('Esta entrega não possui preview local.', 'error'); const state = await call(window.rbBridge.preview.start(lastResult.paths.previewDir)); setResult(`Preview local aberto em ${state.url}`, 'success'); };
 $('stopPreview').onclick = async () => { await call(window.rbBridge.preview.stop()); setResult('Preview local encerrado.', 'success'); };
