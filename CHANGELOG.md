@@ -1,14 +1,21 @@
 # Changelog
 
-## 0.1.2 — Autenticação corrigida
+## 0.1.3 — Execução Base44 corrigida de ponta a ponta
 
-- Corrigida a execução da CLI Base44 no aplicativo empacotado, usando o caminho físico `app.asar.unpacked`.
+- Substituída a tentativa de executar a CLI pelo próprio `.exe` do aplicativo por `utilityProcess.fork` do Electron.
+- O caminho físico da CLI continua sendo resolvido em `app.asar.unpacked`, mas agora é passado como módulo, separado dos argumentos `login`, `whoami` e `logout`.
+- Adicionado smoke test que abre o executável Windows empacotado e executa `base44 login --help` pelo mesmo fluxo usado em produção.
+- Código temporário do GitHub exibido em painel próprio, com ações para copiar e reabrir a autorização.
+- Lista de projetos e contas passou a ser montada com elementos DOM, sem interpolação de HTML.
+- Suíte ampliada para 23 testes automatizados.
+
+## 0.1.2 — Autenticação parcialmente corrigida
+
+- Corrigido o caminho físico da CLI Base44 para `app.asar.unpacked`.
 - Abertura automática das páginas de autorização Base44 e GitHub.
-- Exibição destacada do código temporário do login GitHub.
 - Estados visuais de espera, sucesso e erro nos botões de conexão.
 - Adicionados testes de regressão para caminho empacotado, URLs de autorização e código de dispositivo.
-- Pipeline Windows agora executa a CLI Base44 empacotada antes de liberar o instalador.
-- Suíte ampliada de 19 para 22 testes automatizados.
+- Limitação identificada após teste real: o `.exe` empacotado ainda tratava o caminho da CLI como um comando, impedindo o login Base44.
 
 ## 0.1.1 — MVP RC2
 
