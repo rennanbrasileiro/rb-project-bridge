@@ -83,21 +83,38 @@ jobs:
       - name: Clone existing FitHub repository source
         run: git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
       - name: Convert, audit and build FitHub from existing repository
+        id: fithub_validation
         shell: bash
         run: |
-          node - <<'NODE'
-          const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
-          const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
-          service.transform('fithub', { projectName: 'FitHub Personal Trainer' }).then((result) => {
-            if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
-            console.log(`Entities converted: ${result.entities.length}`);
-          }).catch((error) => { console.error(error); process.exit(1); });
-          NODE
-          cd fithub
-          npm install --no-audit --no-fund --loglevel=error
-          npm run check:standalone
-          npm run build:demo
-          test -f dist/index.html
+          set +e
+          {
+            node - <<'NODE'
+            const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
+            const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
+            (async () => {
+              const result = await service.transform('fithub', { projectName: 'FitHub Personal Trainer' });
+              if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
+              console.log(`Entities converted: ${result.entities.length}`);
+            })().catch((error) => { console.error(error); process.exit(1); });
+            NODE
+            cd fithub
+            npm install --no-audit --no-fund --loglevel=error
+            npm run check:standalone
+            npm run build:demo
+            test -f dist/index.html
+          } > fithub-validation.log 2>&1
+          status=$?
+          set -e
+          tail -n 120 fithub-validation.log
+          exit $status
+      - name: Upload FitHub validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fithub-validation-0.2.3
+          path: fithub-validation.log
+          if-no-files-found: warn
+          retention-days: 3
 
   windows:
     needs: [validate, fithub]
