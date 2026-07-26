@@ -5,8 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
 
 jobs:
   validate:
@@ -16,6 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/v2-standalone-supabase
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -27,7 +27,6 @@ jobs:
         shell: bash
         run: |
           set +e
-          set -o pipefail
           LOG="$RUNNER_TEMP/homologation.log"
           EXIT_FILE="$RUNNER_TEMP/homologation.exit"
           {
@@ -51,28 +50,29 @@ jobs:
           } > "$LOG" 2>&1
           status=$?
           echo "$status" > "$EXIT_FILE"
-          echo '--- FitHub homologation tail ---'
-          tail -n 100 "$LOG"
+          tail -n 80 "$LOG"
           exit 0
-      - name: Publish concise diagnostic issue
+      - name: Persist temporary failure diagnostic
         if: always()
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           status="$(cat "$RUNNER_TEMP/homologation.exit" 2>/dev/null || echo 99)"
           if [ "$status" != '0' ]; then
+            mkdir -p docs
             {
-              echo '## FitHub V2 homologation failure'
+              echo 'FitHub V2 homologation failure'
+              echo 'Commit: ${{ github.sha }}'
+              echo 'Exit code: '$status
               echo
-              echo '- Commit: `${{ github.sha }}`'
-              echo '- Exit code: `'$status'`'
-              echo
-              echo '```text'
-              tail -n 100 "$RUNNER_TEMP/homologation.log"
-              echo '```'
-            } > "$RUNNER_TEMP/failure.md"
-            gh issue create --repo rennanbrasileiro/rb-project-bridge --title 'Diagnostic — FitHub V2 homologation failure' --body-file "$RUNNER_TEMP/failure.md"
+              tail -c 12000 "$RUNNER_TEMP/homologation.log"
+            } > docs/FITHUB_HOMOLOGATION_FAILURE.txt
+            git config user.name 'RB Project Bridge Bot'
+            git config user.email 'rennanbrasileiro@users.noreply.github.com'
+            git add docs/FITHUB_HOMOLOGATION_FAILURE.txt
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record temporary FitHub homologation diagnostic'
+              git push origin HEAD:agent/v2-standalone-supabase
+            fi
           fi
       - name: Enforce FitHub homologation result
         shell: bash
