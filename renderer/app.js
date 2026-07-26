@@ -1,7 +1,7 @@
 'use strict';
 const GITHUB_DEVICE_URL = 'https://github.com/login/device';
 const $ = (id) => document.getElementById(id);
-let githubDeviceCode = '', base44DeviceCode = '', base44DeviceUrl = '', lastResult = null, repositories = [];
+let githubDeviceCode = '', base44DeviceCode = '', base44DeviceUrl = '', lastResult = null, repositories = [], lastRetryJobRoot = null;
 const log = (text) => { $('log').textContent += `${text}\n`; $('log').scrollTop = $('log').scrollHeight; };
 async function call(promise) { const result = await promise; if (!result.ok) throw Object.assign(new Error(result.error.message), result.error); return result.data; }
 function setResult(text, kind = '') { $('result').className = kind; $('result').textContent = text; }
@@ -53,7 +53,8 @@ async function loadRepositories() {
     await inspectRepositorySelection();
   } catch (error) { choice.replaceChildren(); const option = document.createElement('option'); option.value = ''; option.textContent = 'Erro ao carregar repositórios'; choice.appendChild(option); log(`ERRO GitHub: ${error.message}`); }
 }
-async function load() { try { const status = await call(window.rbBridge.system.status()); $('version').textContent = `v${status.version}`; $('base44Status').textContent = status.base44?.loggedIn ? 'Conectado' : 'Não conectado'; $('githubStatus').textContent = status.github?.authenticated ? 'Conectado' : 'Não conectado'; if (status.base44?.loggedIn) { $('base44AuthBox').classList.add('hidden'); await projects(); } if (status.github?.authenticated) { $('githubAuthBox').classList.add('hidden'); await accounts(); } } catch (error) { log(error.message); } }
+async function refreshRetryAction() { try { const history = await call(window.rbBridge.migration.history()); const failed = history.find((entry) => entry.status === 'failed' && entry.jobRoot); lastRetryJobRoot = failed?.jobRoot || null; $('retryLast').classList.toggle('hidden', !lastRetryJobRoot); } catch { lastRetryJobRoot = null; $('retryLast').classList.add('hidden'); } }
+async function load() { try { const status = await call(window.rbBridge.system.status()); $('version').textContent = `v${status.version}`; $('base44Status').textContent = status.base44?.loggedIn ? 'Conectado' : 'Não conectado'; $('githubStatus').textContent = status.github?.authenticated ? 'Conectado' : 'Não conectado'; if (status.base44?.loggedIn) { $('base44AuthBox').classList.add('hidden'); await projects(); } if (status.github?.authenticated) { $('githubAuthBox').classList.add('hidden'); await accounts(); } await refreshRetryAction(); } catch (error) { log(error.message); } }
 $('base44Login').onclick = async () => { const button = $('base44Login'); try { button.disabled = true; $('base44DeviceCode').textContent = 'Gerando...'; $('base44AuthBox').classList.remove('hidden'); $('base44Status').textContent = 'Aguardando...'; log('Abrindo autorização Base44...'); await call(window.rbBridge.base44.login()); $('base44Status').textContent = 'Conectado'; $('base44AuthBox').classList.add('hidden'); setResult('Base44 conectada.', 'success'); await projects(); } catch (error) { $('base44Status').textContent = 'Não conectado'; setResult(error.message, 'error'); log(`ERRO Base44: ${error.message}`); } finally { button.disabled = false; } };
 $('githubLogin').onclick = async () => { const button = $('githubLogin'); try { button.disabled = true; $('githubDeviceCode').textContent = 'Aguardando...'; $('githubAuthBox').classList.remove('hidden'); $('githubStatus').textContent = 'Aguardando...'; await call(window.rbBridge.system.openExternal(GITHUB_DEVICE_URL)); await call(window.rbBridge.github.login()); $('githubStatus').textContent = 'Conectado'; $('githubAuthBox').classList.add('hidden'); setResult('GitHub conectado.', 'success'); await accounts(); } catch (error) { $('githubStatus').textContent = 'Não conectado'; setResult(error.message, 'error'); log(`ERRO GitHub: ${error.message}`); } finally { button.disabled = false; } };
 $('copyBase44Code').onclick = () => copyText(base44DeviceCode); $('openBase44Device').onclick = async () => { if (base44DeviceUrl) await call(window.rbBridge.system.openExternal(base44DeviceUrl)); };
@@ -69,15 +70,31 @@ $('start').onclick = async () => {
     if (!$('output').value) throw new Error('Selecione a pasta de entrega.');
     const repositorySelection = selectedRepository();
     if (!repositorySelection?.name) throw new Error('Selecione um repositório existente ou informe o nome do novo repositório.');
-    resetStages(); $('resultActions').classList.add('hidden'); lastResult = null; setResult('');
+    resetStages(); $('resultActions').classList.add('hidden'); lastResult = null; setResult(''); log('Validando permissões de entrega no GitHub...'); await call(window.rbBridge.github.ensureDeliveryScopes());
     const input = { acceptedAuthorization: $('authorization').checked, deliveryMode: $('deliveryMode').value, project: { id: projectOption.value, name: projectOption.dataset.name, updatedAt: projectOption.dataset.updatedAt || null }, outputDirectory: $('output').value, buildValidation: true, repository: { owner: ownerOption.value, ownerType: ownerOption.dataset.type, strategy: repositorySelection.strategy, name: repositorySelection.name, description: $('description').value, visibility: 'private', commitMessage: 'Entrega independente gerada pelo RB Project Bridge' } };
     log(`Pipeline iniciado para ${input.repository.owner}/${input.repository.name}. Se já existir, o repositório será reutilizado com backup das branches.`); $('start').disabled = true;
     lastResult = await call(window.rbBridge.migration.start(input));
     const reused = lastResult.githubRepository?.reused;
     const backup = lastResult.previousDefaultBranch?.backupBranch;
     setResult(lastResult.pullRequest ? `Alterações preservadas. Revise o PR #${lastResult.pullRequest.number} antes do merge.` : reused ? `Atualizado com segurança: ${lastResult.github.fullName}. Backup: ${backup}.` : `Criado e concluído: ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success');
+    $('resultActions').classList.remove('hidden'); lastRetryJobRoot = null; $('retryLast').classList.add('hidden');
+  } catch (error) { await refreshRetryAction(); const violations = error.details?.violations || []; const suffix = violations.length ? `\nViolações detectadas:\n- ${violations.join('\n- ')}` : ''; setResult(error.message, 'error'); log(`ERRO: ${error.message}${suffix}`); } finally { $('start').disabled = false; }
+};
+
+$('retryLast').onclick = async () => {
+  const button = $('retryLast');
+  if (!lastRetryJobRoot) return setResult('Não existe uma entrega pendente para continuar.', 'error');
+  try {
+    button.disabled = true;
+    log('Continuando a última entrega sem repetir exportação, conversão ou build...');
+    await call(window.rbBridge.github.ensureDeliveryScopes());
+    lastResult = await call(window.rbBridge.migration.retryPublish(lastRetryJobRoot));
+    setResult(`Entrega concluída em ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success');
     $('resultActions').classList.remove('hidden');
-  } catch (error) { const violations = error.details?.violations || []; const suffix = violations.length ? `\nViolações detectadas:\n- ${violations.join('\n- ')}` : ''; setResult(error.message, 'error'); log(`ERRO: ${error.message}${suffix}`); } finally { $('start').disabled = false; }
+    lastRetryJobRoot = null;
+    button.classList.add('hidden');
+  } catch (error) { setResult(error.message, 'error'); log(`ERRO ao continuar: ${error.message}`); }
+  finally { button.disabled = false; }
 };
 $('openPreview').onclick = async () => { if (!lastResult?.paths?.previewDir) return setResult('Esta entrega não possui preview local.', 'error'); const state = await call(window.rbBridge.preview.start(lastResult.paths.previewDir)); setResult(`Preview local aberto em ${state.url}`, 'success'); };
 $('stopPreview').onclick = async () => { await call(window.rbBridge.preview.stop()); setResult('Preview local encerrado.', 'success'); };

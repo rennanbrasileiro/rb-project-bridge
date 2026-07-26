@@ -7,7 +7,16 @@ const { runProcess } = require('../core/process-runner.cjs');
 const { BridgeError } = require('../core/errors.cjs');
 
 const GITHUB_DEVICE_URL = 'https://github.com/login/device';
+const DELIVERY_SCOPES = ['repo', 'read:org', 'gist', 'workflow'];
 function extractGitHubDeviceCode(text) { return String(text).match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/i)?.[0]?.toUpperCase() ?? null; }
+function parseGitHubScopes(text) {
+  const line = String(text || '').split(/\r?\n/).find((entry) => /Token scopes:/i.test(entry)) || '';
+  return [...line.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+}
+function isWorkflowScopeError(error) {
+  const detail = `${error?.message || ''} ${error?.details?.stderr || ''}`;
+  return /workflow.*scope|refusing to allow an OAuth App to create or update workflow/i.test(detail);
+}
 function backupBranchName(prefix, sha, now = new Date()) {
   const stamp = now.toISOString().replace(/\D/g, '').slice(0, 17);
   return `${prefix}-${stamp}-${String(sha || 'unknown').slice(0, 7)}`;
@@ -23,22 +32,52 @@ class GitHubService {
   sessionEnvironment(extra = {}) { return { GH_CONFIG_DIR: this.configDir, GIT_CONFIG_GLOBAL: this.gitConfigPath, GIT_CONFIG_NOSYSTEM: '1', HOME: this.sessionDir, USERPROFILE: this.sessionDir, ...extra }; }
   async runGh(args, options = {}) { await this.ensureSession(); const gh = await this.toolchain.getGh(); return runProcess(gh, args, { timeoutMs: options.timeoutMs ?? 10 * 60 * 1000, input: options.input, env: this.sessionEnvironment(options.env), onOutput: options.onOutput ?? ((entry) => this.emit('github:output', entry)), signal: options.signal, captureSensitive: Boolean(options.captureSensitive) }); }
   async runGit(args, options = {}) { await this.ensureSession(); const git = await this.toolchain.getGit(); return runProcess(git, args, { cwd: options.cwd, timeoutMs: options.timeoutMs ?? 10 * 60 * 1000, env: this.sessionEnvironment(options.env), onOutput: options.onOutput ?? ((entry) => this.emit('github:output', entry)), signal: options.signal }); }
-  async authStatus() { try { const result = await this.runGh(['auth', 'status', '--hostname', 'github.com'], { timeoutMs: 30_000 }); return { authenticated: true, output: result.stdout || result.stderr }; } catch (error) { return { authenticated: false, output: error.details?.stderr || error.message }; } }
-  async login() {
+  async authStatus() {
+    try {
+      const result = await this.runGh(['auth', 'status', '--hostname', 'github.com'], { timeoutMs: 30_000, onOutput: () => {} });
+      const output = result.stdout || result.stderr || '';
+      return { authenticated: true, output, scopes: parseGitHubScopes(output) };
+    } catch (error) { return { authenticated: false, output: error.details?.stderr || error.message, scopes: [] }; }
+  }
+  async interactiveAuth(args, options = {}) {
     let opened = false, outputBuffer = '';
     const openDevicePage = async () => { if (opened) return; opened = true; try { await this.openExternal?.(GITHUB_DEVICE_URL); } catch (error) { this.logger.warn('github.auth.browser.failed', { message: error.message }); } };
     await openDevicePage();
-    await this.runGh(['auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https', '--web', '--skip-ssh-key'], { timeoutMs: 15 * 60 * 1000, onOutput: (entry) => { this.emit('github:output', entry); outputBuffer = `${outputBuffer}${entry.text}`.slice(-4096); const code = extractGitHubDeviceCode(outputBuffer); if (code) this.emit('github:output', { stream: 'stdout', text: `Autorize no navegador usando o código ${code}.\n` }); if (outputBuffer.includes(GITHUB_DEVICE_URL)) void openDevicePage(); } });
+    return this.runGh(args, { timeoutMs: options.timeoutMs ?? 15 * 60 * 1000, signal: options.signal, onOutput: (entry) => {
+      this.emit('github:output', entry);
+      outputBuffer = `${outputBuffer}${entry.text}`.slice(-4096);
+      const code = extractGitHubDeviceCode(outputBuffer);
+      if (code) this.emit('github:output', { stream: 'stdout', text: `Autorize no navegador usando o código ${code}.\n` });
+      if (outputBuffer.includes(GITHUB_DEVICE_URL)) void openDevicePage();
+    } });
+  }
+  async login() {
+    await this.interactiveAuth(['auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https', '--web', '--skip-ssh-key', '--scopes', DELIVERY_SCOPES.join(',')]);
     return this.getAccounts();
+  }
+  async ensureDeliveryScopes(options = {}) {
+    const current = await this.authStatus();
+    if (!current.authenticated) throw new BridgeError('GITHUB_NOT_AUTHENTICATED', 'Conecte o GitHub antes de continuar.');
+    if (current.scopes.includes('workflow')) return current;
+    this.emit('migration:progress', { step: 'github-publish', status: 'running', message: 'O GitHub precisa autorizar a publicação do workflow de validação. Confirme o novo código no navegador.' });
+    try {
+      await this.interactiveAuth(['auth', 'refresh', '--hostname', 'github.com', '--scopes', 'workflow'], options);
+    } catch (error) {
+      throw new BridgeError('GITHUB_WORKFLOW_SCOPE_REQUIRED', 'A autorização adicional do GitHub não foi concluída. O código e o build locais foram preservados; autorize e use “Continuar última entrega”.', { cause: error.message, canRetry: true });
+    }
+    const refreshed = await this.authStatus();
+    if (!refreshed.scopes.includes('workflow')) throw new BridgeError('GITHUB_WORKFLOW_SCOPE_REQUIRED', 'O GitHub continua sem a permissão workflow. Reconecte a conta e tente continuar a entrega.', { scopes: refreshed.scopes, canRetry: true });
+    this.emit('github:output', { stream: 'stdout', text: 'Permissão workflow autorizada.\n' });
+    return refreshed;
   }
   async logout() { try { await this.runGh(['auth', 'logout', '--hostname', 'github.com'], { timeoutMs: 60_000, input: 'Y\n' }); } catch {} await fs.rm(this.sessionDir, { recursive: true, force: true }); return { authenticated: false }; }
   parseJson(output) { try { return JSON.parse(output); } catch { const lines = output.split(/\r?\n/).filter(Boolean); for (let index = lines.length - 1; index >= 0; index -= 1) { try { return JSON.parse(lines[index]); } catch {} } return null; } }
-  async getAccounts() { const status = await this.authStatus(); if (!status.authenticated) return { authenticated: false, accounts: [] }; const user = this.parseJson((await this.runGh(['api', 'user'], { timeoutMs: 60_000 })).stdout); let orgs = []; try { const parsed = this.parseJson((await this.runGh(['api', 'user/orgs', '--paginate', '--slurp'], { timeoutMs: 60_000 })).stdout) || []; orgs = Array.isArray(parsed[0]) ? parsed.flat() : parsed; } catch (error) { this.logger.warn('github.organizations.unavailable', { message: error.message }); } if (!user?.login) throw new BridgeError('GITHUB_PROFILE_UNAVAILABLE', 'GitHub did not return the authenticated profile.'); return { authenticated: true, user: { login: user.login, name: user.name || user.login, avatarUrl: user.avatar_url }, accounts: [{ login: user.login, type: 'user', label: user.name ? `${user.name} (${user.login})` : user.login }, ...orgs.map((org) => ({ login: org.login, type: 'organization', label: org.login }))] }; }
+  async getAccounts() { const status = await this.authStatus(); if (!status.authenticated) return { authenticated: false, accounts: [] }; const user = this.parseJson((await this.runGh(['api', 'user'], { timeoutMs: 60_000, onOutput: () => {} })).stdout); let orgs = []; try { const parsed = this.parseJson((await this.runGh(['api', 'user/orgs', '--paginate', '--slurp'], { timeoutMs: 60_000, onOutput: () => {} })).stdout) || []; orgs = Array.isArray(parsed[0]) ? parsed.flat() : parsed; } catch (error) { this.logger.warn('github.organizations.unavailable', { message: error.message }); } if (!user?.login) throw new BridgeError('GITHUB_PROFILE_UNAVAILABLE', 'GitHub did not return the authenticated profile.'); return { authenticated: true, user: { login: user.login, name: user.name || user.login, avatarUrl: user.avatar_url }, accounts: [{ login: user.login, type: 'user', label: user.name ? `${user.name} (${user.login})` : user.login }, ...orgs.map((org) => ({ login: org.login, type: 'organization', label: org.login }))] }; }
   async listRepositories(owner, ownerType = 'user') {
     const endpoint = ownerType === 'organization'
       ? `orgs/${owner}/repos?per_page=100&sort=updated`
       : 'user/repos?per_page=100&sort=updated&affiliation=owner';
-    const parsed = this.parseJson((await this.runGh(['api', endpoint, '--paginate', '--slurp'], { timeoutMs: 120_000 })).stdout) || [];
+    const parsed = this.parseJson((await this.runGh(['api', endpoint, '--paginate', '--slurp'], { timeoutMs: 120_000, onOutput: () => {} })).stdout) || [];
     const repositories = Array.isArray(parsed?.[0]) ? parsed.flat() : (Array.isArray(parsed) ? parsed : []);
     return repositories
       .filter((repository) => repository?.owner?.login?.toLowerCase() === String(owner).toLowerCase())
@@ -56,7 +95,7 @@ class GitHubService {
     for (const branch of branches) {
       try {
         const endpoint = `repos/${repository.full_name}/contents/${filePath}?ref=${encodeURIComponent(branch)}`;
-        const payload = this.parseJson((await this.runGh(['api', endpoint], { timeoutMs: 30_000 })).stdout);
+        const payload = this.parseJson((await this.runGh(['api', endpoint], { timeoutMs: 30_000, onOutput: () => {} })).stdout);
         if (!payload?.content) continue;
         const text = Buffer.from(String(payload.content).replace(/\s/g, ''), 'base64').toString('utf8');
         return { branch, data: JSON.parse(text) };
@@ -73,7 +112,7 @@ class GitHubService {
     const source = await this.readRepositoryJson(repository, 'RB-BRIDGE-SOURCE.json');
     let latestCommitAt = null;
     try {
-      const commit = this.parseJson((await this.runGh(['api', `repos/${repository.full_name}/commits/${encodeURIComponent(repository.default_branch || 'main')}`], { timeoutMs: 30_000 })).stdout);
+      const commit = this.parseJson((await this.runGh(['api', `repos/${repository.full_name}/commits/${encodeURIComponent(repository.default_branch || 'main')}`], { timeoutMs: 30_000, onOutput: () => {} })).stdout);
       latestCommitAt = commit?.commit?.committer?.date || commit?.commit?.author?.date || null;
     } catch {}
     const previousUpdatedAt = source?.data?.base44UpdatedAt || null;
@@ -120,12 +159,12 @@ class GitHubService {
     } finally { delete authEnv.RB_BRIDGE_GH_TOKEN; }
     return null;
   }
-  async repositoryExists(owner, name) { try { await this.runGh(['api', `repos/${owner}/${name}`], { timeoutMs: 30_000 }); return true; } catch { return false; } }
-  async getRepository(owner, name) { const parsed = this.parseJson((await this.runGh(['api', `repos/${owner}/${name}`], { timeoutMs: 30_000 })).stdout); if (!parsed?.full_name) throw new BridgeError('REPOSITORY_UNAVAILABLE', `Não foi possível consultar ${owner}/${name}.`); return parsed; }
+  async repositoryExists(owner, name) { try { await this.runGh(['api', `repos/${owner}/${name}`], { timeoutMs: 30_000, onOutput: () => {} }); return true; } catch { return false; } }
+  async getRepository(owner, name) { const parsed = this.parseJson((await this.runGh(['api', `repos/${owner}/${name}`], { timeoutMs: 30_000, onOutput: () => {} })).stdout); if (!parsed?.full_name) throw new BridgeError('REPOSITORY_UNAVAILABLE', `Não foi possível consultar ${owner}/${name}.`); return parsed; }
   async ensurePrivate(owner, name, options = {}) {
     const current = await this.getRepository(owner, name);
     if (current.private === true) return current;
-    await this.runGh(['api', '-X', 'PATCH', `repos/${owner}/${name}`, '-F', 'private=true'], { timeoutMs: 60_000, signal: options.signal });
+    await this.runGh(['api', '-X', 'PATCH', `repos/${owner}/${name}`, '-F', 'private=true'], { timeoutMs: 60_000, signal: options.signal, onOutput: () => {} });
     const verified = await this.getRepository(owner, name);
     if (verified.private !== true) throw new BridgeError('REPOSITORY_PRIVACY_FAILED', `O repositório ${owner}/${name} não ficou privado.`);
     return verified;
@@ -170,7 +209,7 @@ class GitHubService {
     const sha = current?.object?.sha;
     if (!sha) return null;
     const backupBranch = backupBranchName(options.prefix || `${branch}-before-bridge`, sha, options.now || new Date());
-    await this.runGh(['api', '-X', 'POST', `repos/${repository.full_name}/git/refs`, '-f', `ref=refs/heads/${backupBranch}`, '-f', `sha=${sha}`], { timeoutMs: 60_000, signal: options.signal });
+    await this.runGh(['api', '-X', 'POST', `repos/${repository.full_name}/git/refs`, '-f', `ref=refs/heads/${backupBranch}`, '-f', `sha=${sha}`], { timeoutMs: 60_000, signal: options.signal, onOutput: () => {} });
     this.emit('migration:progress', { step: 'github-snapshot', status: 'complete', message: `Branch ${branch} preservada em ${backupBranch} (${sha.slice(0, 7)}).` });
     return { sourceBranch: branch, backupBranch, sha };
   }
@@ -178,6 +217,9 @@ class GitHubService {
   async createAskPass() { await this.ensureSession(); if (process.platform === 'win32') { const target = path.join(this.sessionDir, 'git-askpass.cmd'); await fs.writeFile(target, ['@echo off', 'echo %~1 | findstr /I "Username" >nul', 'if %errorlevel%==0 (', '  echo x-access-token', ') else (', '  echo %RB_BRIDGE_GH_TOKEN%', ')', ''].join('\r\n'), { encoding: 'utf8', mode: 0o700 }); return target; } const target = path.join(this.sessionDir, 'git-askpass.sh'); await fs.writeFile(target, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "x-access-token" ;;\n  *) printf "%s\\n" "$RB_BRIDGE_GH_TOKEN" ;;\nesac\n', { encoding: 'utf8', mode: 0o700 }); await fs.chmod(target, 0o700); return target; }
   async publish({ directory, repository, commitMessage, signal, branch = 'main', force = false }) {
     this.emit('migration:progress', { step: branch === (repository.default_branch || 'main') ? 'github-publish' : 'github-snapshot', status: 'running', message: `Publicando ${branch} em ${repository.full_name}...` });
+    const workflowDirectory = path.join(directory, '.github', 'workflows');
+    const workflowFiles = await fs.readdir(workflowDirectory).catch(() => []);
+    if (workflowFiles.some((name) => /\.ya?ml$/i.test(name))) await this.ensureDeliveryScopes({ signal });
     await fs.rm(path.join(directory, '.git'), { recursive: true, force: true });
     const token = await this.getAuthenticationToken(); const askPass = await this.createAskPass(); const authEnv = { GIT_ASKPASS: askPass, GIT_TERMINAL_PROMPT: '0', RB_BRIDGE_GH_TOKEN: token };
     try {
@@ -186,11 +228,12 @@ class GitHubService {
       await this.runGit(['add', '--all'], { cwd: directory, signal, env: authEnv }); await this.runGit(['commit', '-m', commitMessage || 'Initial migration'], { cwd: directory, signal, env: authEnv });
       await this.runGit(['remote', 'add', 'origin', repository.clone_url], { cwd: directory, signal, env: authEnv });
       const pushArgs = ['push', '--set-upstream', 'origin', branch]; if (force) pushArgs.splice(1, 0, '--force');
-      await this.runGit(pushArgs, { cwd: directory, timeoutMs: 20 * 60 * 1000, signal, env: authEnv });
+      try { await this.runGit(pushArgs, { cwd: directory, timeoutMs: 20 * 60 * 1000, signal, env: authEnv }); }
+      catch (error) { if (isWorkflowScopeError(error)) throw new BridgeError('GITHUB_WORKFLOW_SCOPE_REQUIRED', 'O GitHub bloqueou o workflow de validação. O código local foi preservado; autorize a permissão workflow e continue a entrega.', { cause: error.message, canRetry: true }); throw error; }
       const sha = (await this.runGit(['rev-parse', 'HEAD'], { cwd: directory, signal, env: authEnv })).stdout.trim();
       this.emit('migration:progress', { step: branch === (repository.default_branch || 'main') ? 'github-publish' : 'github-snapshot', status: 'complete', message: `${branch} publicado no commit ${sha.slice(0, 7)}.` });
       return { sha, url: repository.html_url, fullName: repository.full_name, branch };
     } finally { delete authEnv.RB_BRIDGE_GH_TOKEN; }
   }
 }
-module.exports = { GitHubService, GITHUB_DEVICE_URL, extractGitHubDeviceCode, backupBranchName };
+module.exports = { GitHubService, GITHUB_DEVICE_URL, DELIVERY_SCOPES, extractGitHubDeviceCode, parseGitHubScopes, isWorkflowScopeError, backupBranchName };
