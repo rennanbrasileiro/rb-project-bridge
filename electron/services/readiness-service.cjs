@@ -54,7 +54,11 @@ function assessMigrationReadiness(report = {}) {
 
   const contractedPackage = report.options?.deliveryPackage || (report.options?.deliveryMode === 'snapshot' ? 'preservation' : 'workspace');
   const requiredLevel = PACKAGE_MINIMUM[contractedPackage] || 'workspace-prepared';
-  const contractedPackagePassed = (LEVEL_RANK[level] ?? 0) >= (LEVEL_RANK[requiredLevel] ?? 0);
+  let contractedPackagePassed = false;
+  if (contractedPackage === 'preservation') contractedPackagePassed = sourcePreserved;
+  else if (contractedPackage === 'sandbox') contractedPackagePassed = runtimePassed && contractCovered;
+  else if (contractedPackage === 'workspace') contractedPackagePassed = runtimePassed && contractCovered && workspacePrepared && localBackendValidated;
+  else if (contractedPackage === 'production') contractedPackagePassed = productionCandidate;
   const targetProfile = report.options?.targetProfile || (contractedPackage === 'preservation' ? 'repository-only' : 'supabase-cloud-static');
 
   const stages = {
