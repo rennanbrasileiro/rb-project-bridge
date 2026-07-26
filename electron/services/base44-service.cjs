@@ -6,8 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { runProcess } = require('../core/process-runner.cjs');
 const { BridgeError } = require('../core/errors.cjs');
+const { redactString } = require('../core/redaction.cjs');
 const { ensureEmptyDir, readJson, pathExists } = require('../core/fs-utils.cjs');
 
 const BASE_URL = process.env.BASE44_API_URL || 'https://app.base44.com';
@@ -20,11 +20,93 @@ function extractHttpsUrls(text) {
   return String(text).match(/https:\/\/[^\s<>"']+/gi) ?? [];
 }
 
+function runUtilityModule(modulePath, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    const utilityProcess = options.utilityProcess;
+    if (!utilityProcess?.fork) {
+      reject(new BridgeError('UTILITY_PROCESS_UNAVAILABLE', 'Electron utility process support is unavailable. Reinstall RB Project Bridge.'));
+      return;
+    }
+    if (options.signal?.aborted) {
+      reject(new BridgeError('PROCESS_ABORTED', 'Base44 CLI was cancelled.'));
+      return;
+    }
+
+    let child;
+    try {
+      child = utilityProcess.fork(modulePath, args, {
+        cwd: options.cwd,
+        env: { ...process.env, ...(options.env ?? {}) },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        serviceName: 'RB Project Bridge Base44 CLI',
+      });
+    } catch (error) {
+      reject(new BridgeError('PROCESS_START_FAILED', error.message, { modulePath: redactString(modulePath) }));
+      return;
+    }
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+    let aborted = false;
+    let timer = null;
+
+    const emit = (stream, chunk) => {
+      const text = redactString(chunk.toString());
+      if (stream === 'stdout') stdout += text;
+      else stderr += text;
+      options.onOutput?.({ stream, text });
+    };
+
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abortHandler);
+      if (error) reject(error);
+      else resolve(result);
+    };
+
+    const terminate = () => {
+      try { child.kill(); } catch {}
+    };
+
+    const abortHandler = () => {
+      aborted = true;
+      terminate();
+    };
+
+    child.stdout?.on('data', (chunk) => emit('stdout', chunk));
+    child.stderr?.on('data', (chunk) => emit('stderr', chunk));
+    child.on('error', (type, location) => {
+      finish(new BridgeError('PROCESS_START_FAILED', `Base44 utility process failed: ${type}`, { location }));
+    });
+    child.on('exit', (code) => {
+      const details = { modulePath: redactString(modulePath), args: args.map(redactString), code, stdout, stderr };
+      if (aborted) finish(new BridgeError('PROCESS_ABORTED', 'Base44 CLI was cancelled.', details));
+      else if (timedOut) finish(new BridgeError('PROCESS_TIMEOUT', 'Base44 CLI exceeded the time limit.', { ...details, timeoutMs: options.timeoutMs }));
+      else if (code === 0 || options.acceptCodes?.includes(code)) finish(null, { code, stdout, stderr, safeStdout: stdout, safeStderr: stderr });
+      else finish(new BridgeError('PROCESS_FAILED', `Base44 CLI exited with code ${code}`, details));
+    });
+
+    if (options.signal) options.signal.addEventListener('abort', abortHandler, { once: true });
+    if (options.timeoutMs) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        terminate();
+      }, options.timeoutMs);
+      timer.unref?.();
+    }
+  });
+}
+
 class Base44Service {
-  constructor({ logger, emit, sessionDir, openExternal }) {
+  constructor({ logger, emit, sessionDir, openExternal, utilityProcess }) {
     this.logger = logger;
     this.emit = emit;
     this.openExternal = openExternal;
+    this.utilityProcess = utilityProcess;
     this.sessionDir = sessionDir || path.join(os.tmpdir(), 'rb-project-bridge-base44');
   }
 
@@ -45,16 +127,10 @@ class Base44Service {
     try {
       const resolved = require.resolve('base44/bin/run.js');
       const executablePath = resolvePackagedCliPath(resolved);
-      if (!fs.existsSync(executablePath)) {
-        throw new Error(`Base44 CLI entrypoint not found at ${executablePath}`);
-      }
+      if (!fs.existsSync(executablePath)) throw new Error(`Base44 CLI entrypoint not found at ${executablePath}`);
       return executablePath;
     } catch (error) {
-      throw new BridgeError(
-        'BASE44_CLI_MISSING',
-        'The bundled Base44 CLI is unavailable. Reinstall RB Project Bridge.',
-        { cause: error.message },
-      );
+      throw new BridgeError('BASE44_CLI_MISSING', 'The bundled Base44 CLI is unavailable. Reinstall RB Project Bridge.', { cause: error.message });
     }
   }
 
@@ -65,6 +141,7 @@ class Base44Service {
         && (parsed.hostname === 'base44.com' || parsed.hostname.endsWith('.base44.com'));
       if (!allowed || openedUrls.has(parsed.href)) return;
       openedUrls.add(parsed.href);
+      this.emit('base44:auth', { url: parsed.href });
       await this.openExternal?.(parsed.href);
       this.logger.info('base44.auth.browser.opened', { host: parsed.hostname });
     } catch (error) {
@@ -77,9 +154,9 @@ class Base44Service {
     const cliPath = this.resolveCliPath();
     const output = options.onOutput ?? ((entry) => this.emit('base44:output', entry));
     this.logger.info('base44.cli.start', { args, cliPath });
-    const result = await runProcess(process.execPath, [cliPath, ...args], {
-      env: this.sessionEnvironment({ ELECTRON_RUN_AS_NODE: '1', ...options.env }),
-      input: options.input,
+    const result = await runUtilityModule(cliPath, args, {
+      utilityProcess: this.utilityProcess,
+      env: this.sessionEnvironment(options.env),
       timeoutMs: options.timeoutMs ?? 10 * 60 * 1000,
       onOutput: output,
       signal: options.signal,
@@ -96,9 +173,7 @@ class Base44Service {
       onOutput: (entry) => {
         this.emit('base44:output', entry);
         outputBuffer = `${outputBuffer}${entry.text}`.slice(-8192);
-        for (const url of extractHttpsUrls(outputBuffer)) {
-          void this.openAuthorizationUrl(url, openedUrls);
-        }
+        for (const url of extractHttpsUrls(outputBuffer)) void this.openAuthorizationUrl(url, openedUrls);
       },
     });
     return this.whoami();
@@ -213,4 +288,4 @@ class Base44Service {
   }
 }
 
-module.exports = { Base44Service, resolvePackagedCliPath, extractHttpsUrls };
+module.exports = { Base44Service, resolvePackagedCliPath, extractHttpsUrls, runUtilityModule };
