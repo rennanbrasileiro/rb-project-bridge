@@ -53,6 +53,14 @@ async function saveDeliveryContext() {
   return response.data;
 }
 
+function clientDeliveryTarget(result = lastResult) {
+  return result?.clientDelivery?.archive?.path
+    || result?.reportFiles?.clientDeliveryArchive
+    || result?.clientDelivery?.directory
+    || result?.reportFiles?.clientDeliveryDirectory
+    || null;
+}
+
 $('deliveryPackage').onchange = refreshClientPackage;
 $('targetProfile').onchange = () => { $('targetProfile').dataset.userSelected = 'true'; refreshClientPackage(); };
 
@@ -77,14 +85,14 @@ setRunning = function setRunningWithDelivery(running) {
 const originalConfigureActionsForDelivery = configureResultActions;
 configureResultActions = function configureActionsWithClientPackage(result = lastResult) {
   originalConfigureActionsForDelivery(result);
-  const directory = result?.clientDelivery?.directory || result?.reportFiles?.clientDeliveryDirectory;
-  $('openDelivery').classList.toggle('hidden', !directory);
-  if (directory) $('resultActions').classList.remove('hidden');
+  const target = clientDeliveryTarget(result);
+  $('openDelivery').classList.toggle('hidden', !target);
+  if (target) $('resultActions').classList.remove('hidden');
 };
 
 $('openDelivery').onclick = () => {
-  const directory = lastResult?.clientDelivery?.directory || lastResult?.reportFiles?.clientDeliveryDirectory;
-  if (directory) call(window.rbBridge.system.openPath(directory));
+  const target = clientDeliveryTarget(lastResult);
+  if (target) call(window.rbBridge.system.openPath(target));
 };
 
 const originalSetResultForDelivery = setResult;
