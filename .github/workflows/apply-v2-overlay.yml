@@ -33,8 +33,8 @@ jobs:
           service.transform('fixture-fithub', { projectName: 'FitHub Personal Trainer' })
             .then((result) => {
               console.log(JSON.stringify(result, null, 2));
-              if (result.entitiesConverted < 20) throw new Error('FitHub entity conversion is incomplete.');
-              if (!result.independence?.passed) throw new Error('Base44 runtime dependencies remain.');
+              if (!Array.isArray(result.entities) || result.entities.length < 20) throw new Error('FitHub entity conversion is incomplete.');
+              if (!result.gate?.passed) throw new Error('Base44 runtime dependencies remain.');
             })
             .catch((error) => { console.error(error); process.exit(1); });
           NODE
