@@ -23,7 +23,7 @@ function diagnosticsScript() {
     const panel = document.createElement('div');
     panel.id = 'rb-preview-error';
     panel.style.cssText = 'position:fixed;inset:16px;z-index:2147483647;overflow:auto;padding:22px;border:2px solid #ef4444;border-radius:12px;background:#190b0d;color:#fee2e2;font:14px/1.55 Segoe UI,Arial,sans-serif;white-space:pre-wrap;box-shadow:0 18px 60px #0009';
-    panel.textContent = 'O preview encontrou um erro de execução.\n\n' + message + '\n\nCopie esta mensagem e consulte os detalhes técnicos no RB Project Bridge.';
+    panel.textContent = 'O preview encontrou um erro de execução.\\n\\n' + message + '\\n\\nCopie esta mensagem e consulte os detalhes técnicos no RB Project Bridge.';
     document.body.appendChild(panel);
   };
   window.addEventListener('error', (event) => { const message = describe(event.error || event.message); errors.push(message); show(message); });
