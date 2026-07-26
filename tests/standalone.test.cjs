@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { StandaloneService, parseJsonc, snakeCase, propertySqlType, buildEntitySql, removeFunctionCall } = require('../electron/services/standalone-service.cjs');
+const { StandaloneService, parseJsonc, snakeCase, propertySqlType, buildEntitySql, removeFunctionCall, isArchivedBase44Source } = require('../electron/services/standalone-service.cjs');
 const { PreviewService } = require('../electron/services/preview-service.cjs');
 
 const logger = { info() {}, warn() {}, error() {} };
@@ -48,7 +48,7 @@ test('31 transforms an exported project into a standalone Supabase handoff', asy
   await fs.mkdir(path.join(root, 'src', 'lib'), { recursive: true });
   await fs.writeFile(path.join(root, 'base44', 'entities', 'Task.jsonc'), JSON.stringify({ name: 'Task', type: 'object', properties: { title: { type: 'string' }, tags: { type: 'array' } }, required: ['title'] }));
   await fs.writeFile(path.join(root, 'base44', 'entities', 'User.jsonc'), JSON.stringify({ name: 'User', type: 'object', properties: { role: { type: 'string' } } }));
-  await fs.writeFile(path.join(root, 'base44', 'functions', 'hello', 'entry.ts'), 'export default async function handler(request, context) { return context.base44.auth.me(); }');
+  await fs.writeFile(path.join(root, 'base44', 'functions', 'hello', 'entry.ts'), "import { createClient } from '@base44/sdk';\nexport default async function handler(request, context) { return context.base44.auth.me(); }");
   await fs.writeFile(path.join(root, 'src', 'api', 'base44Client.js'), "import { createClient } from '@base44/sdk';\nexport const base44=createClient({});\n");
   await fs.writeFile(path.join(root, 'src', 'lib', 'app-params.js'), 'export const appParams = {};');
   await fs.writeFile(path.join(root, 'vite.config.js'), "import base44 from '@base44/vite-plugin'\nimport react from '@vitejs/plugin-react'\nexport default { plugins:[base44({ legacySDKImports:true }),react()] };\n");
@@ -82,7 +82,28 @@ test('32 standalone gate blocks active Base44 runtime imports', async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
-test('33 preview service serves SPA fallback from generated dist', async () => {
+test('33 ignores archived Base44 function sources but still blocks active runtime imports', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rb-standalone-archive-'));
+  const archived = path.join(root, 'supabase', 'functions', 'hello', 'source.base44.ts');
+  await fs.mkdir(path.dirname(archived), { recursive: true });
+  await fs.mkdir(path.join(root, 'src'), { recursive: true });
+  await fs.mkdir(path.join(root, 'scripts'), { recursive: true });
+  await fs.writeFile(archived, "import { createClient } from '@base44/sdk';");
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ dependencies: {} }));
+  await fs.writeFile(path.join(root, 'supabase', 'config.toml'), 'project_id = "test"');
+  await fs.writeFile(path.join(root, '.env.example'), 'VITE_SUPABASE_URL=');
+  await fs.mkdir(path.join(root, 'src', 'api'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src', 'api', 'base44Client.js'), 'export const base44 = {};');
+  await fs.writeFile(path.join(root, 'scripts', 'verify-standalone.mjs'), 'console.log("ok")');
+  const service = new StandaloneService({ logger, emit });
+  assert.equal(isArchivedBase44Source(root, archived), true);
+  assert.equal((await service.verify(root)).passed, true);
+  await fs.writeFile(path.join(root, 'src', 'active.js'), "import x from '@base44/sdk';");
+  await assert.rejects(() => service.verify(root), (error) => error.code === 'STANDALONE_GATE_FAILED' && error.details.violations.some((item) => item.includes('active.js')));
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test('34 preview service serves SPA fallback from generated dist', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rb-preview-'));
   await fs.writeFile(path.join(root, 'index.html'), '<h1>preview-ok</h1>');
   const preview = new PreviewService({ logger, openExternal: async () => {} });
