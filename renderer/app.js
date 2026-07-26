@@ -3,6 +3,8 @@
 const GITHUB_DEVICE_URL = 'https://github.com/login/device';
 const $ = (id) => document.getElementById(id);
 let githubDeviceCode = '';
+let base44DeviceCode = '';
+let base44DeviceUrl = '';
 
 const log = (text) => {
   $('log').textContent += `${text}\n`;
@@ -23,16 +25,25 @@ function showGitHubCode(code) {
   $('result').textContent = `Digite o código ${code} na página de autorização do GitHub.`;
 }
 
+function showBase44Authorization(payload) {
+  base44DeviceCode = payload.userCode || '';
+  base44DeviceUrl = payload.url || '';
+  $('base44DeviceCode').textContent = base44DeviceCode || '—';
+  $('base44AuthBox').classList.remove('hidden');
+  $('result').className = '';
+  $('result').textContent = base44DeviceCode
+    ? `Confirme o código ${base44DeviceCode} na página da Base44.`
+    : 'Conclua a autorização na página da Base44.';
+}
+
 function showAuthInstruction(provider, text) {
   const content = String(text);
   const code = content.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/i)?.[0]?.toUpperCase();
   if (provider === 'GitHub' && code) showGitHubCode(code);
-  if (provider === 'Base44' && /https:\/\/[^\s<>"']+/i.test(content)) {
-    $('base44AuthBox').classList.remove('hidden');
-  }
 }
 
 async function copyText(text) {
+  if (!text) return;
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text);
@@ -55,7 +66,10 @@ async function load() {
     const status = await call(window.rbBridge.system.status());
     $('base44Status').textContent = status.base44?.loggedIn ? 'Conectado' : 'Não conectado';
     $('githubStatus').textContent = status.github?.authenticated ? 'Conectado' : 'Não conectado';
-    if (status.base44?.loggedIn) await projects();
+    if (status.base44?.loggedIn) {
+      $('base44AuthBox').classList.add('hidden');
+      await projects();
+    }
     if (status.github?.authenticated) {
       $('githubAuthBox').classList.add('hidden');
       await accounts();
@@ -95,16 +109,19 @@ $('base44Login').onclick = async () => {
   const button = $('base44Login');
   try {
     button.disabled = true;
+    base44DeviceCode = '';
+    base44DeviceUrl = '';
+    $('base44DeviceCode').textContent = 'Gerando código...';
+    $('base44AuthBox').classList.remove('hidden');
     $('base44Status').textContent = 'Aguardando autorização...';
-    $('base44AuthBox').classList.add('hidden');
     $('result').className = '';
-    $('result').textContent = 'Aguarde a abertura da autorização Base44 no navegador.';
+    $('result').textContent = 'Gerando a autorização oficial da Base44...';
     log('Abrindo autorização Base44...');
     await call(window.rbBridge.base44.login());
     $('base44Status').textContent = 'Conectado';
     $('base44AuthBox').classList.add('hidden');
     $('result').className = 'success';
-    $('result').textContent = 'Base44 conectado com sucesso.';
+    $('result').textContent = 'Base44 conectada com sucesso.';
     await projects();
   } catch (error) {
     $('base44Status').textContent = 'Não conectado';
@@ -144,11 +161,24 @@ $('githubLogin').onclick = async () => {
   }
 };
 
+$('copyBase44Code').onclick = async () => {
+  await copyText(base44DeviceCode);
+  if (base44DeviceCode) {
+    $('result').className = 'success';
+    $('result').textContent = `Código ${base44DeviceCode} copiado.`;
+  }
+};
+
+$('openBase44Device').onclick = async () => {
+  if (base44DeviceUrl) await call(window.rbBridge.system.openExternal(base44DeviceUrl));
+};
+
 $('copyGitHubCode').onclick = async () => {
-  if (!githubDeviceCode) return;
   await copyText(githubDeviceCode);
-  $('result').className = 'success';
-  $('result').textContent = `Código ${githubDeviceCode} copiado.`;
+  if (githubDeviceCode) {
+    $('result').className = 'success';
+    $('result').textContent = `Código ${githubDeviceCode} copiado.`;
+  }
 };
 
 $('openGitHubDevice').onclick = async () => {
@@ -197,12 +227,16 @@ $('start').onclick = async () => {
   }
 };
 
-for (const channel of ['base44:output', 'github:output', 'build:output', 'migration:progress', 'toolchain:progress']) {
+for (const channel of ['base44:auth', 'base44:output', 'github:output', 'build:output', 'migration:progress', 'toolchain:progress']) {
   window.rbBridge.on(channel, (event) => {
+    if (channel === 'base44:auth') {
+      showBase44Authorization(event);
+      log(`Código Base44: ${event.userCode}`);
+      return;
+    }
     const text = event.text || event.message || JSON.stringify(event);
     log(text);
     if (channel === 'github:output') showAuthInstruction('GitHub', text);
-    if (channel === 'base44:output') showAuthInstruction('Base44', text);
   });
 }
 
