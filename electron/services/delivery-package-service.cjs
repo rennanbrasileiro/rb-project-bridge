@@ -84,23 +84,30 @@ function normalizeOptions(report = {}) {
 
 function acceptanceState(report, packageDefinition) {
   const readiness = report.readiness || {};
-  const actualRank = LEVEL_RANK[readiness.level] ?? 0;
-  const requiredRank = LEVEL_RANK[packageDefinition.minimumLevel] ?? 0;
   const buildPassed = report.build?.status === 'passed';
   const runtimePassed = Boolean(report.build?.runtime?.passed);
   const noUnsupported = (readiness.runtimeContracts?.unsupported || 0) === 0;
+  const sourcePreserved = Boolean(report.backup?.sha256);
+  const workspacePrepared = Boolean(report.build?.compatibility?.workspace?.prepared || report.runtimeCompatibility?.workspace?.prepared);
+  const workspaceValidated = Boolean(report.workspaceValidation?.passed);
+  let acceptedByAutomation = false;
+  if (packageDefinition.id === 'preservation') acceptedByAutomation = sourcePreserved;
+  else if (packageDefinition.id === 'sandbox') acceptedByAutomation = runtimePassed && noUnsupported;
+  else if (packageDefinition.id === 'workspace') acceptedByAutomation = runtimePassed && noUnsupported && workspacePrepared && workspaceValidated;
+  else if (packageDefinition.id === 'production') acceptedByAutomation = readiness.level === 'production-candidate';
   return {
-    acceptedByAutomation: actualRank >= requiredRank,
+    acceptedByAutomation,
     actualLevel: readiness.level || 'not-ready',
     requiredLevel: packageDefinition.minimumLevel,
     checks: [
-      { id: 'source-preserved', label: 'Código original e backup preservados', passed: Boolean(report.backup?.sha256) },
+      { id: 'source-preserved', label: 'Código original e backup preservados', passed: sourcePreserved },
       { id: 'security', label: 'Nenhum segredo bloqueante no pacote publicável', passed: (report.security?.blocking?.length || 0) === 0 },
       { id: 'standalone', label: 'Dependência estrutural da Base44 removida', passed: Boolean(report.standaloneGateAfterBuild?.passed || report.standaloneGateAfterPreviewRepair?.passed || report.standaloneGate?.passed) },
       { id: 'build', label: 'Build executado com sucesso', passed: buildPassed },
       { id: 'runtime', label: 'Aplicação renderizada no Chromium', passed: runtimePassed },
       { id: 'contracts', label: 'Nenhum contrato Base44 desconhecido', passed: noUnsupported },
-      { id: 'workspace', label: 'Workspace independente preparado', passed: Boolean(report.build?.compatibility?.workspace?.prepared || report.runtimeCompatibility?.workspace?.prepared) },
+      { id: 'workspace-prepared', label: 'Workspace independente preparado', passed: workspacePrepared },
+      { id: 'workspace-validated', label: 'Banco local, autenticação e CRUD validados', passed: workspaceValidated },
       { id: 'production', label: 'Sem bloqueadores para os fluxos de produção contratados', passed: readiness.level === 'production-candidate' },
     ],
   };
