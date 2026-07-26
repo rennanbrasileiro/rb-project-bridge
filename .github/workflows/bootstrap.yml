@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/bootstrap.yml"
+  pull_request:
+    types: [opened]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +19,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Switch to main source
+        shell: pwsh
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
 
       - name: Configure Node.js
         uses: actions/setup-node@v4
