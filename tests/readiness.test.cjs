@@ -18,17 +18,22 @@ function baseReport() {
   };
 }
 
-test('classifies a runnable app with local workspace and production blockers', () => {
-  const readiness = assessMigrationReadiness(baseReport());
+test('classifies a runnable app with a prepared but not yet accepted local workspace', () => {
+  const report = baseReport();
+  let readiness = assessMigrationReadiness(report);
   assert.equal(readiness.score, 85);
   assert.equal(readiness.level, 'workspace-prepared');
   assert.equal(readiness.recommendedPackage, 'Workspace');
-  assert.equal(readiness.contractedPackagePassed, true);
+  assert.equal(readiness.contractedPackagePassed, false);
   assert.equal(readiness.stages.sandbox.status, 'passed');
   assert.equal(readiness.stages.workspace.status, 'prepared');
   assert.equal(readiness.stages.production.status, 'blocked');
   assert.equal(readiness.runtimeContracts.emulated, 1);
   assert.match(readinessMarkdown(readiness), /Workspace evolutivo/);
+  report.workspaceValidation = { passed: true };
+  readiness = assessMigrationReadiness(report);
+  assert.equal(readiness.contractedPackagePassed, true);
+  assert.equal(readiness.stages.workspace.status, 'passed');
 });
 
 test('requires explicit backend, scope and production evidence before production candidate', () => {
