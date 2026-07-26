@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  prepare:
     if: github.head_ref == 'agent/v2-standalone-supabase'
     runs-on: ubuntu-latest
     steps:
@@ -20,7 +20,7 @@ jobs:
           node-version: 22
       - name: Install and test RB Project Bridge
         run: |
-          npm install --no-audit --no-fund
+          npm install --no-audit --no-fund --loglevel=error
           npm run check
       - name: Clone complete FitHub source
         run: git clone --depth 1 --branch main https://github.com/rennanbrasileiro/fithub.git fixture-fithub
@@ -32,21 +32,54 @@ jobs:
           const service = new StandaloneService({ logger: { info(){}, warn(){} }, emit(){} });
           service.transform('fixture-fithub', { projectName: 'FitHub Personal Trainer' })
             .then((result) => {
-              console.log(JSON.stringify(result, null, 2));
+              console.log(`Converted entities: ${result.entities?.length || 0}`);
+              console.log(`Preserved functions: ${result.functions?.length || 0}`);
+              console.log(`Production blockers: ${result.blockers?.length || 0}`);
               if (!Array.isArray(result.entities) || result.entities.length < 20) throw new Error('FitHub entity conversion is incomplete.');
               if (!result.gate?.passed) throw new Error('Base44 runtime dependencies remain.');
             })
             .catch((error) => { console.error(error); process.exit(1); });
           NODE
-      - name: Install transformed FitHub dependencies
+      - name: Install and audit transformed FitHub
         working-directory: fixture-fithub
-        run: npm install --no-audit --no-fund
-      - name: Audit zero Base44 runtime
+        run: |
+          npm install --no-audit --no-fund --loglevel=error
+          npm run check:standalone
+      - name: Prepare transformed source artifact
+        shell: bash
+        run: |
+          rm -rf fixture-fithub/node_modules fixture-fithub/.git fixture-fithub/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fithub-standalone-source
+          path: fixture-fithub
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  build-demo:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fithub-standalone-source
+          path: fixture-fithub
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install transformed dependencies
         working-directory: fixture-fithub
-        run: npm run check:standalone
+        run: npm ci --no-audit --no-fund --loglevel=error
       - name: Build FitHub local demo
         working-directory: fixture-fithub
-        run: npm run build:demo
+        shell: bash
+        run: |
+          set +e
+          npm run build:demo > build.log 2>&1
+          status=$?
+          cat build.log
+          exit "$status"
       - name: Verify local preview artifact
         shell: bash
         run: test -f fixture-fithub/dist/index.html
@@ -61,7 +94,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run check
       - run: npm run dist:win
         env:
