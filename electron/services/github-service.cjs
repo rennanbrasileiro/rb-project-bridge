@@ -8,6 +8,10 @@ const { BridgeError } = require('../core/errors.cjs');
 
 const GITHUB_DEVICE_URL = 'https://github.com/login/device';
 function extractGitHubDeviceCode(text) { return String(text).match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/i)?.[0]?.toUpperCase() ?? null; }
+function backupBranchName(prefix, sha, now = new Date()) {
+  const stamp = now.toISOString().replace(/\D/g, '').slice(0, 17);
+  return `${prefix}-${stamp}-${String(sha || 'unknown').slice(0, 7)}`;
+}
 
 class GitHubService {
   constructor({ toolchain, logger, emit, sessionDir, openExternal }) {
@@ -41,17 +45,43 @@ class GitHubService {
     return verified;
   }
   async createRepository({ owner, ownerType, name, description }, options = {}) {
-    if (await this.repositoryExists(owner, name)) throw new BridgeError('REPOSITORY_EXISTS', `The repository ${owner}/${name} already exists.`);
     const endpoint = ownerType === 'organization' ? `orgs/${owner}/repos` : 'user/repos';
     const args = ['api', '-X', 'POST', endpoint, '-f', `name=${name}`, '-F', 'private=true']; if (description) args.push('-f', `description=${description}`);
     const repository = this.parseJson((await this.runGh(args, { timeoutMs: 60_000, signal: options.signal })).stdout);
     if (!repository?.full_name) throw new BridgeError('REPOSITORY_CREATE_FAILED', 'GitHub did not return the created repository.');
     return this.ensurePrivate(owner, name, options);
   }
+  async resolveRepository(input, options = {}) {
+    if (await this.repositoryExists(input.owner, input.name)) {
+      const repository = await this.ensurePrivate(input.owner, input.name, options);
+      this.emit('migration:progress', { step: 'github-publish', status: 'running', message: `Reutilizando ${repository.full_name}; nenhuma branch será excluída.` });
+      return { repository, reused: true };
+    }
+    return { repository: await this.createRepository(input, options), reused: false };
+  }
+  async getBranchRef(repository, branch, options = {}) {
+    try {
+      const encoded = encodeURIComponent(branch);
+      return this.parseJson((await this.runGh(['api', `repos/${repository.full_name}/git/ref/heads/${encoded}`], { timeoutMs: 30_000, signal: options.signal })).stdout);
+    } catch (error) {
+      const detail = `${error.message || ''} ${error.details?.stderr || ''}`;
+      if (/404|not found|reference does not exist/i.test(detail)) return null;
+      throw error;
+    }
+  }
+  async preserveBranch(repository, branch, options = {}) {
+    const current = await this.getBranchRef(repository, branch, options);
+    const sha = current?.object?.sha;
+    if (!sha) return null;
+    const backupBranch = backupBranchName(options.prefix || `${branch}-before-bridge`, sha, options.now || new Date());
+    await this.runGh(['api', '-X', 'POST', `repos/${repository.full_name}/git/refs`, '-f', `ref=refs/heads/${backupBranch}`, '-f', `sha=${sha}`], { timeoutMs: 60_000, signal: options.signal });
+    this.emit('migration:progress', { step: 'github-snapshot', status: 'complete', message: `Branch ${branch} preservada em ${backupBranch} (${sha.slice(0, 7)}).` });
+    return { sourceBranch: branch, backupBranch, sha };
+  }
   async getAuthenticationToken() { const result = await this.runGh(['auth', 'token', '--hostname', 'github.com'], { timeoutMs: 30_000, captureSensitive: true, onOutput: () => {} }); const token = result.stdout.trim(); if (!token || token.includes('[REDACTED]')) throw new BridgeError('GITHUB_TOKEN_UNAVAILABLE', 'GitHub authentication could not be prepared for the push.'); return token; }
   async createAskPass() { await this.ensureSession(); if (process.platform === 'win32') { const target = path.join(this.sessionDir, 'git-askpass.cmd'); await fs.writeFile(target, ['@echo off', 'echo %~1 | findstr /I "Username" >nul', 'if %errorlevel%==0 (', '  echo x-access-token', ') else (', '  echo %RB_BRIDGE_GH_TOKEN%', ')', ''].join('\r\n'), { encoding: 'utf8', mode: 0o700 }); return target; } const target = path.join(this.sessionDir, 'git-askpass.sh'); await fs.writeFile(target, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "x-access-token" ;;\n  *) printf "%s\\n" "$RB_BRIDGE_GH_TOKEN" ;;\nesac\n', { encoding: 'utf8', mode: 0o700 }); await fs.chmod(target, 0o700); return target; }
   async publish({ directory, repository, commitMessage, signal, branch = 'main', force = false }) {
-    this.emit('migration:progress', { step: branch === 'main' ? 'github-publish' : 'github-snapshot', status: 'running', message: `Publicando ${branch} em ${repository.full_name}...` });
+    this.emit('migration:progress', { step: branch === (repository.default_branch || 'main') ? 'github-publish' : 'github-snapshot', status: 'running', message: `Publicando ${branch} em ${repository.full_name}...` });
     await fs.rm(path.join(directory, '.git'), { recursive: true, force: true });
     const token = await this.getAuthenticationToken(); const askPass = await this.createAskPass(); const authEnv = { GIT_ASKPASS: askPass, GIT_TERMINAL_PROMPT: '0', RB_BRIDGE_GH_TOKEN: token };
     try {
@@ -62,9 +92,9 @@ class GitHubService {
       const pushArgs = ['push', '--set-upstream', 'origin', branch]; if (force) pushArgs.splice(1, 0, '--force');
       await this.runGit(pushArgs, { cwd: directory, timeoutMs: 20 * 60 * 1000, signal, env: authEnv });
       const sha = (await this.runGit(['rev-parse', 'HEAD'], { cwd: directory, signal, env: authEnv })).stdout.trim();
-      this.emit('migration:progress', { step: branch === 'main' ? 'github-publish' : 'github-snapshot', status: 'complete', message: `${branch} publicado no commit ${sha.slice(0, 7)}.` });
+      this.emit('migration:progress', { step: branch === (repository.default_branch || 'main') ? 'github-publish' : 'github-snapshot', status: 'complete', message: `${branch} publicado no commit ${sha.slice(0, 7)}.` });
       return { sha, url: repository.html_url, fullName: repository.full_name, branch };
     } finally { delete authEnv.RB_BRIDGE_GH_TOKEN; }
   }
 }
-module.exports = { GitHubService, GITHUB_DEVICE_URL, extractGitHubDeviceCode };
+module.exports = { GitHubService, GITHUB_DEVICE_URL, extractGitHubDeviceCode, backupBranchName };
