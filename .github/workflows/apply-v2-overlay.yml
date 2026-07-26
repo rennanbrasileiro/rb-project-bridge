@@ -55,7 +55,7 @@ jobs:
           tail -n 100 "$LOG"
           exit 0
       - name: Publish concise diagnostic issue
-        if: steps.homologate.outcome == 'success'
+        if: always()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
