@@ -33,6 +33,14 @@ jobs:
       - run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify packaged Base44 CLI
+        shell: pwsh
+        run: |
+          $cli = Resolve-Path 'release/win-unpacked/resources/app.asar.unpacked/node_modules/base44/bin/run.js'
+          $assets = Resolve-Path 'release/win-unpacked/resources/app.asar.unpacked/node_modules/base44/dist/assets'
+          if (-not (Test-Path $assets)) { throw 'Bundled Base44 assets are missing.' }
+          node $cli login --help
+          if ($LASTEXITCODE -ne 0) { throw "Bundled Base44 CLI failed with exit code $LASTEXITCODE." }
       - name: Generate SHA-256 checksums
         shell: pwsh
         run: |
@@ -42,20 +50,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows
+          name: rb-project-bridge-windows-0.1.2
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish RC1 release
+      - name: Publish 0.1.2 RC1 release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.1.1-rc1
-          target_commitish: main
-          name: RB Project Bridge 0.1.1 RC1
+          tag_name: v0.1.2-rc1
+          target_commitish: ${{ github.sha }}
+          name: RB Project Bridge 0.1.2 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.1.1-x64.exe
-            release/RB-Project-Bridge-Portable-0.1.1-x64.exe
+            release/RB-Project-Bridge-Setup-0.1.2-x64.exe
+            release/RB-Project-Bridge-Portable-0.1.2-x64.exe
             release/SHA256SUMS.txt

@@ -4,6 +4,8 @@ const {safeSlug,writeJson,readJson,sha256File}=require('../electron/core/fs-util
 const {redact,redactString}=require('../electron/core/redaction.cjs');
 const {BridgeError,asBridgeError}=require('../electron/core/errors.cjs');
 const {SecurityService}=require('../electron/services/security-service.cjs');
+const {resolvePackagedCliPath,extractHttpsUrls}=require('../electron/services/base44-service.cjs');
+const {extractGitHubDeviceCode}=require('../electron/services/github-service.cjs');
 const service=()=>new SecurityService({logger:{info(){}},emit(){}});
 test('01 slug removes accents',()=>assert.equal(safeSlug('Ágil Hub — Projeto 2026'),'agil-hub-projeto-2026'));
 test('02 slug fallback',()=>assert.equal(safeSlug('***','fallback'),'fallback'));
@@ -24,3 +26,6 @@ test('16 detects sdk',async()=>{const d=await fs.mkdtemp(path.join(os.tmpdir(),'
 test('17 detects entity',async()=>{const d=await fs.mkdtemp(path.join(os.tmpdir(),'rb-'));await fs.mkdir(path.join(d,'base44','entities'),{recursive:true});await fs.writeFile(path.join(d,'base44','entities','Task.jsonc'),'{}');assert.equal((await service().analyzeBase44Dependencies(d)).entityFiles.length,1);await fs.rm(d,{recursive:true,force:true});});
 test('18 sanitizer removes node_modules',async()=>{const d=await fs.mkdtemp(path.join(os.tmpdir(),'rb-'));await fs.mkdir(path.join(d,'node_modules'));await fs.writeFile(path.join(d,'node_modules','x'),'a');await service().sanitize(d);await assert.rejects(fs.access(path.join(d,'node_modules')));await fs.rm(d,{recursive:true,force:true});});
 test('19 repository name max length',()=>assert.ok(safeSlug('a'.repeat(200)).length<=80));
+test('20 packaged Base44 CLI uses app.asar.unpacked',()=>assert.equal(resolvePackagedCliPath('C:\\app\\resources\\app.asar\\node_modules\\base44\\bin\\run.js'),'C:\\app\\resources\\app.asar.unpacked\\node_modules\\base44\\bin\\run.js'));
+test('21 extracts Base44 authorization URLs',()=>assert.deepEqual(extractHttpsUrls('Open https://app.base44.com/login/device now'),['https://app.base44.com/login/device']));
+test('22 extracts GitHub device code',()=>assert.equal(extractGitHubDeviceCode('First copy your one-time code: 6348-9E4A'),'6348-9E4A'));

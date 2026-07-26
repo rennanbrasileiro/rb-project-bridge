@@ -12,10 +12,19 @@ const { ensureEmptyDir, readJson, pathExists } = require('../core/fs-utils.cjs')
 
 const BASE_URL = process.env.BASE44_API_URL || 'https://app.base44.com';
 
+function resolvePackagedCliPath(resolvedPath) {
+  return String(resolvedPath).replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2');
+}
+
+function extractHttpsUrls(text) {
+  return String(text).match(/https:\/\/[^\s<>"']+/gi) ?? [];
+}
+
 class Base44Service {
-  constructor({ logger, emit, sessionDir }) {
+  constructor({ logger, emit, sessionDir, openExternal }) {
     this.logger = logger;
     this.emit = emit;
+    this.openExternal = openExternal;
     this.sessionDir = sessionDir || path.join(os.tmpdir(), 'rb-project-bridge-base44');
   }
 
@@ -34,9 +43,32 @@ class Base44Service {
 
   resolveCliPath() {
     try {
-      return require.resolve('base44/bin/run.js');
+      const resolved = require.resolve('base44/bin/run.js');
+      const executablePath = resolvePackagedCliPath(resolved);
+      if (!fs.existsSync(executablePath)) {
+        throw new Error(`Base44 CLI entrypoint not found at ${executablePath}`);
+      }
+      return executablePath;
     } catch (error) {
-      throw new BridgeError('BASE44_CLI_MISSING', 'The bundled Base44 CLI is unavailable. Reinstall RB Project Bridge.', { cause: error.message });
+      throw new BridgeError(
+        'BASE44_CLI_MISSING',
+        'The bundled Base44 CLI is unavailable. Reinstall RB Project Bridge.',
+        { cause: error.message },
+      );
+    }
+  }
+
+  async openAuthorizationUrl(url, openedUrls) {
+    try {
+      const parsed = new URL(url);
+      const allowed = parsed.protocol === 'https:'
+        && (parsed.hostname === 'base44.com' || parsed.hostname.endsWith('.base44.com'));
+      if (!allowed || openedUrls.has(parsed.href)) return;
+      openedUrls.add(parsed.href);
+      await this.openExternal?.(parsed.href);
+      this.logger.info('base44.auth.browser.opened', { host: parsed.hostname });
+    } catch (error) {
+      this.logger.warn('base44.auth.browser.failed', { message: error.message });
     }
   }
 
@@ -44,7 +76,7 @@ class Base44Service {
     await fsp.mkdir(this.sessionDir, { recursive: true });
     const cliPath = this.resolveCliPath();
     const output = options.onOutput ?? ((entry) => this.emit('base44:output', entry));
-    this.logger.info('base44.cli.start', { args });
+    this.logger.info('base44.cli.start', { args, cliPath });
     const result = await runProcess(process.execPath, [cliPath, ...args], {
       env: this.sessionEnvironment({ ELECTRON_RUN_AS_NODE: '1', ...options.env }),
       input: options.input,
@@ -57,7 +89,18 @@ class Base44Service {
   }
 
   async login() {
-    await this.runCli(['login'], { timeoutMs: 15 * 60 * 1000 });
+    const openedUrls = new Set();
+    let outputBuffer = '';
+    await this.runCli(['login'], {
+      timeoutMs: 15 * 60 * 1000,
+      onOutput: (entry) => {
+        this.emit('base44:output', entry);
+        outputBuffer = `${outputBuffer}${entry.text}`.slice(-8192);
+        for (const url of extractHttpsUrls(outputBuffer)) {
+          void this.openAuthorizationUrl(url, openedUrls);
+        }
+      },
+    });
     return this.whoami();
   }
 
@@ -170,4 +213,4 @@ class Base44Service {
   }
 }
 
-module.exports = { Base44Service };
+module.exports = { Base44Service, resolvePackagedCliPath, extractHttpsUrls };
