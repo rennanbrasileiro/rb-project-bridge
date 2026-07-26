@@ -2,9 +2,9 @@
 
 Aplicativo desktop para transformar projetos Base44 em entregas independentes, verificáveis e retomáveis: exportação sanitizada, conversão para Supabase, build local, execução validada em navegador, preview navegável e publicação segura em GitHub privado.
 
-## Versão atual — 0.2.6
+## Versão atual — 0.2.7
 
-A v0.2.6 fecha a diferença entre **compilar** e **funcionar**. Depois do build, o Bridge abre o bundle em um Chromium isolado, acompanha erros de JavaScript e confirma que a aplicação realmente montou conteúdo antes de permitir a publicação.
+A v0.2.7 fecha o ciclo do preview. Além de impedir novas telas brancas por meio da validação em Chromium, o Bridge agora consegue **recriar e revalidar o preview de uma operação já concluída**, usando o código convertido preservado no checkpoint.
 
 Principais capacidades:
 
@@ -18,6 +18,7 @@ Principais capacidades:
 - compatibilidade genérica para assinaturas `base44.entities.*.subscribe`;
 - auditoria dos métodos Base44 usados pelo projeto e bloqueio dos ainda não suportados;
 - service worker de produção desativado no modo demo para evitar bundles antigos em cache;
+- reconstrução de previews antigos sem reexportar a Base44 e sem alterar o GitHub;
 - distinção entre snapshot Base44 salvo e aplicação independente realmente entregue;
 - preservação automática da branch principal e da origem anterior;
 - atualização por pull request quando o GitHub evoluiu depois da última entrega;
@@ -47,6 +48,16 @@ Cada operação registra um estado verificável:
 - `delivered`
 
 Somente operações que chegaram a `ready-to-publish` podem oferecer **Continuar do ponto salvo**. A retomada mantém a estratégia original de entrega e não repete exportação, transformação, instalação ou build já aprovados.
+
+## Abrir ou reconstruir o preview
+
+As ações têm finalidades diferentes:
+
+- **Abrir preview**: liga o servidor local e abre o bundle já existente. Não recompila o projeto.
+- **Parar preview**: encerra apenas o servidor local.
+- **Recriar e validar preview**: usa a operação concluída preservada, aplica as compatibilidades atuais, reinstala dependências em cópia isolada, recompila, recria o preview e valida a execução em Chromium.
+
+A reconstrução não baixa novamente o projeto Base44 e não envia nenhuma alteração ao GitHub.
 
 ## Critério de aprovação do preview
 
@@ -135,6 +146,8 @@ A suíte cobre, entre outros pontos:
 - desativação do service worker no modo demo;
 - diagnóstico de erros de execução no preview;
 - validação da renderização em Chromium;
+- reconstrução de previews concluídos;
+- isolamento dos caminhos de uma operação reparada;
 - preservação de branches;
 - checkpoints e retomada segura;
 - preview em entrega parcial;
