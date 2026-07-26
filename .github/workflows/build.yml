@@ -19,8 +19,14 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
-      - name: Validate syntax
-        run: npm run check -- --test-name-pattern="a^"
+      - name: Validate Electron core syntax
+        run: node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs
+      - name: Validate migration service syntax
+        run: node --check electron/services/github-service.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs
+      - name: Validate reporting and handoff syntax
+        run: node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs
+      - name: Validate renderer syntax
+        run: node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js
       - name: Validate runtime compatibility, readiness and client handoff
         run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs tests/delivery-package.test.cjs
       - name: Rebuild completed preview
