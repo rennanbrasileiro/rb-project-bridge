@@ -28,6 +28,7 @@ jobs:
           if grep -q 'async listRepositories(owner' electron/services/github-service.cjs && grep -q '"version": "0.2.3"' package.json; then
             echo 'Patch already applied.' | tee patch.log
           else
+            python scripts/fix-0.2.3-patcher.py
             sed -i "s#Path('.github/workflows/release.yml')#Path('.github/workflows/build.yml')#" scripts/apply-0.2.3-resilience.py
             set +e
             python scripts/apply-0.2.3-resilience.py >patch.log 2>&1
