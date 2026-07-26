@@ -1,6 +1,6 @@
 {
   "name": "rb-project-bridge",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Desktop pipeline to export Base44 projects, convert them to standalone Supabase applications, validate local builds and safely update private GitHub repositories.",
   "main": "electron/main.cjs",
   "author": "RB HUB",
