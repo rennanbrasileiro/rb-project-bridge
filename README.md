@@ -1,10 +1,10 @@
 # RB Project Bridge
 
-Aplicativo desktop para transformar projetos Base44 em entregas independentes, verificáveis e retomáveis: exportação sanitizada, conversão para Supabase, build local, preview navegável e publicação segura em GitHub privado.
+Aplicativo desktop para transformar projetos Base44 em entregas independentes, verificáveis e retomáveis: exportação sanitizada, conversão para Supabase, build local, execução validada em navegador, preview navegável e publicação segura em GitHub privado.
 
-## Versão atual — 0.2.5
+## Versão atual — 0.2.6
 
-A v0.2.5 fecha o fluxo de produto observado na migração do FitHub. O aplicativo agora informa claramente o que foi concluído, o que ficou pendente e qual ação pode ser executada sem repetir trabalho aprovado.
+A v0.2.6 fecha a diferença entre **compilar** e **funcionar**. Depois do build, o Bridge abre o bundle em um Chromium isolado, acompanha erros de JavaScript e confirma que a aplicação realmente montou conteúdo antes de permitir a publicação.
 
 Principais capacidades:
 
@@ -13,6 +13,11 @@ Principais capacidades:
 - checkpoints persistentes do início até a entrega;
 - retomada exclusiva da publicação quando exportação, conversão e build já passaram;
 - preview disponível mesmo quando a entrega externa fica parcial;
+- validação do bundle em Chromium, com bloqueio de telas brancas;
+- diagnóstico visível no preview quando ocorre erro de execução;
+- compatibilidade genérica para assinaturas `base44.entities.*.subscribe`;
+- auditoria dos métodos Base44 usados pelo projeto e bloqueio dos ainda não suportados;
+- service worker de produção desativado no modo demo para evitar bundles antigos em cache;
 - distinção entre snapshot Base44 salvo e aplicação independente realmente entregue;
 - preservação automática da branch principal e da origem anterior;
 - atualização por pull request quando o GitHub evoluiu depois da última entrega;
@@ -24,9 +29,10 @@ Principais capacidades:
 2. **Selecionar produto e pasta** — define a origem e o diretório que guardará backup, código convertido, preview e relatório.
 3. **Exportar** — baixa ou reaproveita um snapshot Base44 válido, valida a árvore e gera backup ZIP com SHA-256.
 4. **Desacoplar** — remove o runtime Base44, gera a aplicação standalone e prepara Supabase, schema, RLS, adapter e modo demo.
-5. **Validar** — instala dependências em cópia isolada, executa o build e prepara o preview local.
-6. **Preservar** — salva a `main` e a `base44-source` anteriores em branches datadas antes de qualquer substituição.
-7. **Entregar** — publica o snapshot e a aplicação independente; quando há evolução concorrente, abre uma revisão em vez de sobrescrever a `main`.
+5. **Auditar runtime** — identifica métodos Base44 usados pelas telas, aplica compatibilidades conhecidas e bloqueia dependências ainda não convertidas.
+6. **Validar** — instala dependências em cópia isolada, executa o build, abre o resultado em Chromium e confirma a renderização do React.
+7. **Preservar** — salva a `main` e a `base44-source` anteriores em branches datadas antes de qualquer substituição.
+8. **Entregar** — publica o snapshot e a aplicação independente; quando há evolução concorrente, abre uma revisão em vez de sobrescrever a `main`.
 
 ## Checkpoints e retomada
 
@@ -41,6 +47,18 @@ Cada operação registra um estado verificável:
 - `delivered`
 
 Somente operações que chegaram a `ready-to-publish` podem oferecer **Continuar do ponto salvo**. A retomada mantém a estratégia original de entrega e não repete exportação, transformação, instalação ou build já aprovados.
+
+## Critério de aprovação do preview
+
+O preview só é considerado aprovado quando:
+
+- o build produz `index.html` e os assets;
+- o servidor local consegue entregar o bundle;
+- uma janela Chromium isolada carrega a aplicação;
+- o elemento `#root` recebe conteúdo renderizado;
+- não há erro fatal, rejeição não tratada ou falha principal de carregamento.
+
+Quando um erro escapar para a abertura manual, o preview exibe um painel com a mensagem técnica, em vez de permanecer branco silenciosamente.
 
 ## Segurança
 
@@ -66,9 +84,10 @@ A conversão estrutural não transfere automaticamente:
 - valores de secrets;
 - autorizações OAuth;
 - arquivos armazenados no Base44 Storage;
-- domínio, DNS ou configuração de produção.
+- domínio, DNS ou configuração de produção;
+- funções Base44 cujo código original depende de `context.base44`, secrets ou payloads específicos.
 
-Esses itens devem ser migrados e homologados conforme o ambiente de destino.
+Esses itens devem ser migrados e homologados conforme o ambiente de destino. Quando o projeto usa uma API de runtime ainda não suportada, a operação é interrompida com a identificação do arquivo e do método, em vez de publicar uma aplicação quebrada.
 
 ## Desenvolvimento
 
@@ -111,6 +130,11 @@ A suíte cobre, entre outros pontos:
 - retries de rede Base44;
 - sanitização, redaction e scanner de segredos;
 - transformação standalone e gate Supabase;
+- compatibilidade de assinaturas em tempo real;
+- auditoria de métodos Base44 no código exportado;
+- desativação do service worker no modo demo;
+- diagnóstico de erros de execução no preview;
+- validação da renderização em Chromium;
 - preservação de branches;
 - checkpoints e retomada segura;
 - preview em entrega parcial;
