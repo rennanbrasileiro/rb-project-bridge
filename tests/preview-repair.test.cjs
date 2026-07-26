@@ -81,5 +81,5 @@ test('renderer exposes an explicit rebuild action', async () => {
   assert.match(html, /id="repairPreview"/);
   assert.match(html, /repair-preview\.js/);
   assert.match(controller, /migration\.repairPreview/);
-  assert.match(controller, /GitHub não (?:será|foi) alterado/);
+  assert.match(controller, /GitHub não (?:serão alterados|alterado)/);
 });
