@@ -1,10 +1,10 @@
 'use strict';
-const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const os=require('node:os');const path=require('node:path');
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const os=require('node:os');const path=require('node:path');const {EventEmitter}=require('node:events');const {PassThrough}=require('node:stream');
 const {safeSlug,writeJson,readJson,sha256File}=require('../electron/core/fs-utils.cjs');
 const {redact,redactString}=require('../electron/core/redaction.cjs');
 const {BridgeError,asBridgeError}=require('../electron/core/errors.cjs');
 const {SecurityService}=require('../electron/services/security-service.cjs');
-const {resolvePackagedCliPath,extractHttpsUrls}=require('../electron/services/base44-service.cjs');
+const {resolvePackagedCliPath,extractHttpsUrls,runUtilityModule}=require('../electron/services/base44-service.cjs');
 const {extractGitHubDeviceCode}=require('../electron/services/github-service.cjs');
 const service=()=>new SecurityService({logger:{info(){}},emit(){}});
 test('01 slug removes accents',()=>assert.equal(safeSlug('Ágil Hub — Projeto 2026'),'agil-hub-projeto-2026'));
@@ -29,3 +29,4 @@ test('19 repository name max length',()=>assert.ok(safeSlug('a'.repeat(200)).len
 test('20 packaged Base44 CLI uses app.asar.unpacked',()=>assert.equal(resolvePackagedCliPath('C:\\app\\resources\\app.asar\\node_modules\\base44\\bin\\run.js'),'C:\\app\\resources\\app.asar.unpacked\\node_modules\\base44\\bin\\run.js'));
 test('21 extracts Base44 authorization URLs',()=>assert.deepEqual(extractHttpsUrls('Open https://app.base44.com/login/device now'),['https://app.base44.com/login/device']));
 test('22 extracts GitHub device code',()=>assert.equal(extractGitHubDeviceCode('First copy your one-time code: 6348-9E4A'),'6348-9E4A'));
+test('23 utility process receives module path separately from CLI arguments',async()=>{let call;const utilityProcess={fork(modulePath,args,options){call={modulePath,args,options};const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>true;process.nextTick(()=>{child.stdout.write('ok');child.stdout.end();child.emit('exit',0);});return child;}};const result=await runUtilityModule('C:\\base44\\bin\\run.js',['login'],{utilityProcess,timeoutMs:1000});assert.equal(call.modulePath,'C:\\base44\\bin\\run.js');assert.deepEqual(call.args,['login']);assert.equal(call.options.stdio[0],'ignore');assert.equal(result.stdout,'ok');});
