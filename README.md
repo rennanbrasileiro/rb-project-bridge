@@ -1,147 +1,146 @@
 # RB Project Bridge
 
-Aplicativo desktop para transformar projetos Base44 em ativos independentes e verificáveis: preservação, desacoplamento, sandbox executável, workspace Supabase local, diagnóstico de prontidão e entrega segura em GitHub privado.
+Aplicativo desktop para retirar produtos da Base44 com um processo verificável: preservação do ativo, isolamento técnico, sandbox executável, workspace independente, avaliação de produção e pacote formal de entrega ao cliente.
 
-## Versão atual — 0.3.0
+## Versão atual — 0.4.0
 
-A v0.3.0 transforma o Bridge de um exportador técnico em uma **esteira de saída da Base44**. Cada operação passa a informar qual estágio foi realmente alcançado:
+A v0.4.0 organiza o Bridge pelo **resultado contratado**, não apenas pelo mecanismo técnico. Antes de iniciar, a operação registra cliente, responsável, pacote, arquitetura de destino e escopo declarado. Ao terminar, produz evidências técnicas e um handoff utilizável.
 
-1. **Preservação** — código original, backup verificável e histórico protegidos.
-2. **Isolamento** — runtime Base44 removido e estrutura Supabase criada.
-3. **Sandbox executável** — aplicação compilada e renderizada em Chromium com dados temporários.
-4. **Workspace evolutivo** — scripts e documentação para front-end e Supabase local via Docker.
-5. **Produção homologável** — dados, usuários, funções e integrações reais convertidos e validados.
+Pacotes disponíveis:
 
-Principais capacidades:
+1. **Diagnóstico e preservação** — backup, snapshot, inventário e plano de saída; não promete execução independente.
+2. **Sandbox executável** — aplicação navegável fora da Base44, com modo demo e validação em Chromium.
+3. **Workspace evolutivo** — repositório modificável, migrations, Supabase local, scripts e documentação.
+4. **Migração completa e homologação** — projeto de substituição da Base44 com dados, usuários, storage, integrações, implantação e aceite funcional.
 
-- inventário de entidades, autenticação, logs, funções e integrações Base44;
-- classificação de cada contrato como convertido, encaminhado, emulado ou não suportado;
-- compatibilidade para realtime e `base44.appLogs.logUserInApp`;
-- bloqueio de APIs desconhecidas antes da publicação;
-- build em cópia isolada;
-- validação real em Chromium, incluindo montagem do `#root` e captura de erros;
-- diagnóstico visível no preview em vez de tela branca silenciosa;
-- sandbox imediato com dados temporários no navegador;
-- workspace com Supabase local, Docker e `.env.local` gerado automaticamente;
-- relatório de prontidão de 0 a 100, pacote recomendado e próximas ações;
-- reconstrução de previews antigos sem reexportar a Base44 nem alterar o GitHub;
-- preservação automática da branch principal e da origem anterior;
-- publicação direta ou por pull request conforme a evolução do repositório.
+O Bridge compara o estágio efetivamente alcançado com o pacote contratado. Um React renderizado não é apresentado como migração completa.
 
-## Fluxo do produto
+## O que o cliente recebe
 
-1. **Conectar contas** — autentica Base44 e GitHub pelo navegador e reutiliza sessões válidas.
-2. **Selecionar produto e pasta** — define a origem e o diretório que guardará backup, código convertido, preview e relatório.
-3. **Exportar** — baixa ou reaproveita um snapshot Base44 válido, valida a árvore e gera backup ZIP com SHA-256.
-4. **Desacoplar** — remove o runtime Base44, gera schema, RLS, adapter, migrations e modo demo.
-5. **Auditar runtime** — identifica os contratos usados pelas telas e aplica compatibilidades conhecidas.
-6. **Preparar workspace** — adiciona scripts, documentação e configuração para Supabase local.
-7. **Validar** — instala dependências em cópia isolada, executa o build, abre o bundle em Chromium e confirma a renderização.
-8. **Classificar prontidão** — registra estágio, nota, bloqueadores e pacote recomendado.
-9. **Preservar destino** — salva a `main` e a `base44-source` anteriores em branches datadas.
-10. **Entregar** — publica o snapshot e a aplicação independente ou abre uma revisão quando o GitHub evoluiu.
+A operação standalone gera:
 
-## Arquivos gerados
+- repositório GitHub privado, preservado e versionado;
+- ZIP verificável da entrega com arquivo SHA-256;
+- código standalone e snapshot Base44 em branch própria;
+- preview local quando aplicável;
+- `CLIENT_DELIVERY/CLIENT_DELIVERY_MANIFEST.json`;
+- `CLIENT_HANDOFF.md`;
+- `ACCEPTANCE_CHECKLIST.md`;
+- `DEPLOYMENT_BLUEPRINT.md`;
+- `CREDENTIALS_HANDOFF.md`;
+- `MIGRATION_BACKLOG.md`;
+- relatórios de runtime, segurança e prontidão.
 
-Toda entrega standalone pode conter:
+O botão **Abrir pacote do cliente** abre o ZIP final quando disponível; em operações incompletas, abre a pasta documental.
 
-- `RB-BRIDGE-REPORT.json` e `.md`;
-- `RB-MIGRATION-READINESS.json` e `.md`;
-- `RB-RUNTIME-CONTRACTS.json`;
-- `RUNTIME_COMPATIBILITY.md`;
-- `DEVELOPMENT_WORKSPACE.md`;
-- `MIGRATION_REPORT.md`;
-- `SUPABASE_SETUP.md`;
-- migrations, seed, funções preservadas e workflow de validação.
+## Processo de uma entrega comercial
 
-## Abrir ou reconstruir o preview
+1. **Definir o contrato** — registrar pacote, destino, funcionalidades, dados, usuários, arquivos, integrações e implantação incluídos.
+2. **Obter autorização** — confirmar propriedade do produto e permissão para exportar, transformar e publicar.
+3. **Preservar** — exportar, sanitizar, gerar backup com SHA-256 e proteger branches anteriores.
+4. **Inventariar** — mapear entidades, autenticação, logs, funções, integrações, conectores e chamadas diretas de backend.
+5. **Converter** — gerar adapter, schema, RLS, migrations, funções preparadas e workspace.
+6. **Validar** — instalar em cópia isolada, compilar, abrir em Chromium e bloquear contratos desconhecidos.
+7. **Homologar conforme o pacote** — testar banco local, dados, usuários, storage, integrações e ambiente real quando contratados.
+8. **Empacotar** — produzir repositório, ZIP, checksum, manifesto, aceite, blueprint e backlog.
+9. **Transferir custódia** — colocar GitHub, hospedagem, banco, domínio e provedores sob controle do cliente.
+10. **Aceitar e cortar** — registrar evidências, testar backup/rollback e só então desligar a Base44.
 
-- **Abrir preview** liga o servidor local e usa o bundle já existente.
-- **Parar preview** encerra apenas o servidor.
-- **Recriar e validar preview** aplica compatibilidades atuais, recompila e testa novamente em Chromium.
+Consulte [CLIENT_DELIVERY_PLAYBOOK.md](docs/CLIENT_DELIVERY_PLAYBOOK.md) para o roteiro operacional completo.
 
-A reconstrução usa o checkpoint local e não reexporta a Base44 nem publica no GitHub.
+## Arquiteturas de destino
 
-## Modos de evolução do projeto entregue
+- **Supabase Cloud + hospedagem web** — perfil principal suportado para front-end React/Vite, banco, autenticação, storage, realtime e Edge Functions.
+- **Supabase próprio ou local** — workspace Docker preparado; produção exige operação, TLS, SMTP, backup, observabilidade e atualização do ambiente.
+- **AWS customizado** — gera blueprint para uma arquitetura como S3/CloudFront, Lambda/API Gateway, Cognito e RDS, mas não promete implantação automática. Exige adapters e infraestrutura específicos.
+- **Somente código e documentação** — repositório e pacote local sem implantação gerenciada.
 
-### Sandbox imediato
+## Compatibilidade Base44
+
+O inventário cobre famílias como:
+
+- entidades e realtime;
+- autenticação, inclusive `isAuthenticated` e fluxos de e-mail/senha, OTP e OAuth reconhecidos;
+- convites de usuários, com função administrativa preparada no backend;
+- app logs e analytics;
+- functions, integrations e rotas `/api/functions/*`;
+- conectores e service role;
+- agentes e namespaces desconhecidos.
+
+Cada contrato é classificado como:
+
+- **convertido** — possui implementação independente;
+- **encaminhado** — usa função, storage ou adapter do destino;
+- **emulado** — suficiente para sandbox, mas bloqueia produção até decisão;
+- **não suportado** — interrompe a aprovação e identifica método e arquivo.
+
+## Sandbox e workspace
+
+Sandbox imediato, sem Docker:
 
 ```bash
 npm install
 npm run dev:demo
 ```
 
-Não exige Docker. É indicado para revisar telas, navegação e componentes. Os dados ficam temporariamente no navegador.
-
-### Workspace com Supabase local
+Workspace com Supabase local:
 
 ```bash
 npm install
 npm run workspace:dev
 ```
 
-Exige Docker Desktop. O script inicia o Supabase, obtém as credenciais locais, cria `.env.local` e abre o Vite. O reset local pode ser feito com:
+Comandos adicionais:
 
 ```bash
+npm run workspace:status
 npm run workspace:reset
+npm run supabase:types
 ```
 
-## Critério de aprovação do sandbox
+## Critério de aprovação
 
-O preview só é considerado aprovado quando:
+### Sandbox
 
-- o build produz `index.html` e assets;
-- o servidor local entrega o bundle;
-- uma janela Chromium isolada carrega a aplicação;
-- o elemento `#root` recebe conteúdo;
-- não há erro fatal, rejeição não tratada ou falha principal de carregamento;
-- todos os contratos Base44 detectados possuem tratamento conhecido.
+Exige build, servidor local, carregamento em Chromium, conteúdo no `#root`, ausência de erro fatal e cobertura conhecida para todos os contratos detectados.
 
-## Limites da automação
+### Workspace
 
-A conversão estrutural não transfere automaticamente:
+Além do sandbox, exige scripts e migrations preparados. A validação completa depende de Docker ativo e testes de autenticação, CRUD, RLS e realtime com persistência local.
 
-- registros reais do banco;
-- usuários e sessões;
-- secrets e autorizações OAuth;
-- arquivos de storage;
-- funções dependentes de `context.base44`, secrets, raw body ou contratos específicos;
-- pagamentos, webhooks, domínio, DNS, backup e observabilidade de produção.
+### Produção
 
-Esses itens passam a ser inventariados e entram no plano de migração, mas exigem conversão e homologação específicas.
+Nunca é aprovada apenas pelo build. Exige evidências separadas para os itens contratados, como:
 
-## Pacotes comerciais
+- dados e reconciliação;
+- usuários, papéis, convites e autenticação;
+- storage e permissões;
+- funções, pagamentos, webhooks, jobs e integrações;
+- implantação, domínio, TLS, backup, monitoramento e rollback;
+- homologação funcional do cliente.
 
-Consulte [PRODUCT_PACKAGES.md](docs/PRODUCT_PACKAGES.md). Os pacotes são:
+## Segurança e custódia
 
-- Diagnóstico e Preservação;
-- Sandbox Executável;
-- Workspace Evolutivo;
-- Migração Completa e Homologação.
-
-A nota de prontidão é evidência técnica; não substitui o aceite funcional do cliente.
-
-## Segurança
-
-- O aplicativo não solicita senhas da Base44 ou do GitHub.
-- As sessões ficam isoladas no diretório privado do aplicativo.
-- Tokens não são incluídos em URL, commit ou log.
-- Logs passam por redaction antes da persistência.
-- `.env`, `.git`, caches e artefatos temporários são removidos da cópia publicável.
-- Possíveis tokens, chaves privadas e segredos bloqueiam a entrega.
-- Symlinks e arquivos especiais bloqueiam a execução.
+- Tokens e secrets não entram no repositório, ZIP ou log.
+- Service role permanece exclusivamente no backend.
 - Repositórios são privados por padrão.
-- O backup original nunca é modificado.
-- A branch principal existente é preservada antes da atualização.
+- O backup original não é alterado.
+- Branches anteriores são preservadas antes de atualizações.
+- Credenciais devem ser entregues por cofre ou canal seguro.
+- Contas de produção devem ficar em nome do cliente.
+- Acesso temporário da equipe deve ser removido após o aceite.
 
 Leia [THREAT_MODEL.md](docs/THREAT_MODEL.md) antes de uso comercial.
 
+## Abrir ou reconstruir preview
+
+- **Abrir preview** serve o bundle existente.
+- **Parar preview** encerra apenas o servidor.
+- **Recriar e validar preview** aplica o catálogo atual, recompila e testa novamente sem reexportar nem publicar.
+
 ## Desenvolvimento do Bridge
 
-Requisitos:
-
-- Node.js 20.19 ou superior;
-- Windows 10/11, Linux ou macOS.
+Requisitos: Node.js 20.19 ou superior e Windows 10/11, Linux ou macOS.
 
 ```bash
 npm install
@@ -149,35 +148,8 @@ npm run check
 npm start
 ```
 
-## Gerar instalador Windows
-
-```powershell
-./scripts/build-windows.ps1
-```
-
-O pipeline executa validação sintática, testes, empacotamento, smoke OAuth no executável, checksums e upload dos artefatos.
-
-## Estado da qualidade
-
-A suíte cobre, entre outros pontos:
-
-- autenticação e capacidades GitHub;
-- retries de rede Base44;
-- sanitização, redaction e scanner de segredos;
-- transformação standalone e gate Supabase;
-- inventário de contratos de runtime;
-- realtime, app logs e APIs emuladas;
-- preparação do workspace local;
-- diagnóstico e nota de prontidão;
-- diagnóstico de erros no preview;
-- renderização em Chromium;
-- reconstrução de previews concluídos;
-- preservação de branches e retomada segura;
-- estratégia por pull request;
-- fluxo completo com serviços simulados.
-
-Consulte [OPERATOR_RUNBOOK.md](docs/OPERATOR_RUNBOOK.md) e [BUILD_STATUS.md](BUILD_STATUS.md).
+O pipeline valida sintaxe, 72 testes automatizados, empacotamento Windows, OAuth no executável, checksums e artefatos.
 
 ## Licença
 
-Uso interno da RB HUB neste estágio. Antes da comercialização pública, definir licença, política de privacidade, termos do serviço e assinatura de código do instalador.
+Uso interno da RB HUB neste estágio. Antes da comercialização pública, definir licença, política de privacidade, termos do serviço, SLA, contrato de tratamento de dados e assinatura de código do instalador.
