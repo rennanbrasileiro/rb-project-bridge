@@ -13,6 +13,7 @@ const { SecurityService } = require('./services/security-service.cjs');
 const { BuildService } = require('./services/build-service.cjs');
 const { StandaloneService } = require('./services/standalone-service.cjs');
 const { PreviewService } = require('./services/preview-service.cjs');
+const { PreviewRepairService } = require('./services/preview-repair-service.cjs');
 const { ArchiveService } = require('./services/archive-service.cjs');
 const { ReportService } = require('./services/report-service.cjs');
 const { MigrationService } = require('./services/migration-service.cjs');
@@ -46,7 +47,8 @@ function createServices() {
   const archive = new ArchiveService({ emit });
   const reports = new ReportService({ userDataDir, logger });
   const migration = new MigrationService({ base44, github, security, build, standalone, archive, reports, logger, emit });
-  return { logger, toolchain, base44, github, security, build, standalone, preview, archive, reports, migration };
+  const previewRepair = new PreviewRepairService({ build, standalone, security, reports, logger, emit });
+  return { logger, toolchain, base44, github, security, build, standalone, preview, previewRepair, archive, reports, migration };
 }
 
 function serializeError(error) { const normalized = asBridgeError(error); return { name: normalized.name, code: normalized.code, message: normalized.message, details: normalized.details }; }
@@ -71,6 +73,11 @@ function validateMigrationInput(input) {
   return input;
 }
 
+function validateJobRoot(jobRoot) {
+  if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'É necessária uma pasta de operação válida.');
+  return jobRoot;
+}
+
 function registerIpc() {
   handle('system:status', async () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch, userData: app.getPath('userData'), toolchain: await services.toolchain.status(), base44: await services.base44.whoami(), github: await services.github.authStatus(), preview: services.preview.status() }));
   handle('system:choose-output-directory', async () => { const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? null : result.filePaths[0]; });
@@ -78,8 +85,10 @@ function registerIpc() {
   handle('system:open-external', async (url) => { const parsed = new URL(url); if (!['https:', 'http:'].includes(parsed.protocol)) throw new BridgeError('INVALID_URL', 'Somente links HTTP/HTTPS podem ser abertos.'); if (parsed.protocol === 'http:' && !['127.0.0.1', 'localhost'].includes(parsed.hostname)) throw new BridgeError('INVALID_URL', 'Links HTTP são permitidos apenas para preview local.'); await shell.openExternal(parsed.href); return true; });
   handle('base44:status', () => services.base44.whoami()); handle('base44:login', () => services.base44.login()); handle('base44:logout', () => services.base44.logout()); handle('base44:projects', () => services.base44.listProjects());
   handle('github:status', () => services.github.authStatus()); handle('github:login', () => services.github.login()); handle('github:logout', () => services.github.logout()); handle('github:accounts', () => services.github.getAccounts()); handle('github:ensure-delivery-scopes', () => services.github.ensureDeliveryScopes()); handle('github:repositories', (owner, ownerType) => services.github.listRepositories(owner, ownerType)); handle('github:source-status', (input) => services.github.inspectSourceStatus(input));
-  handle('migration:start', (input) => services.migration.migrate(validateMigrationInput(input))); handle('migration:cancel', () => services.migration.cancel());
-  handle('migration:retry-publish', (jobRoot) => { if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'É necessária uma pasta de operação válida.'); return services.migration.retryPublish(jobRoot); });
+  handle('migration:start', (input) => services.migration.migrate(validateMigrationInput(input)));
+  handle('migration:cancel', () => { const migration = services.migration.cancel(); const repair = services.previewRepair.cancel(); return { cancelled: Boolean(migration.cancelled || repair.cancelled) }; });
+  handle('migration:retry-publish', (jobRoot) => services.migration.retryPublish(validateJobRoot(jobRoot)));
+  handle('migration:repair-preview', (jobRoot) => services.previewRepair.repair(validateJobRoot(jobRoot)));
   handle('migration:history', () => services.reports.getHistory()); handle('migration:history-clear', () => services.reports.clearHistory());
   handle('preview:start', (directory) => services.preview.start(directory)); handle('preview:stop', () => services.preview.stop()); handle('preview:status', () => services.preview.status());
 }
