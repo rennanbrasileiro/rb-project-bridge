@@ -25,11 +25,15 @@ $('start').onclick = async () => {
     const projectOption = $('project').selectedOptions[0], ownerOption = $('owner').selectedOptions[0];
     if (!projectOption || !ownerOption) throw new Error('Conecte as contas e selecione projeto e destino.');
     if (!$('output').value) throw new Error('Selecione a pasta de entrega.');
+    if (!$('repoName').value.trim()) throw new Error('Informe o nome exato do repositório que será criado ou reutilizado.');
     resetStages(); $('resultActions').classList.add('hidden'); lastResult = null; setResult('');
-    const input = { acceptedAuthorization: $('authorization').checked, deliveryMode: $('deliveryMode').value, project: { id: projectOption.value, name: projectOption.dataset.name }, outputDirectory: $('output').value, buildValidation: true, repository: { owner: ownerOption.value, ownerType: ownerOption.dataset.type, name: $('repoName').value || projectOption.dataset.name, description: $('description').value, visibility: 'private', commitMessage: 'Entrega independente gerada pelo RB Project Bridge' } };
-    log('Pipeline iniciado...'); $('start').disabled = true;
+    const input = { acceptedAuthorization: $('authorization').checked, deliveryMode: $('deliveryMode').value, project: { id: projectOption.value, name: projectOption.dataset.name }, outputDirectory: $('output').value, buildValidation: true, repository: { owner: ownerOption.value, ownerType: ownerOption.dataset.type, name: $('repoName').value.trim(), description: $('description').value, visibility: 'private', commitMessage: 'Entrega independente gerada pelo RB Project Bridge' } };
+    log(`Pipeline iniciado para ${input.repository.owner}/${input.repository.name}. Se já existir, o repositório será reutilizado com backup das branches.`); $('start').disabled = true;
     lastResult = await call(window.rbBridge.migration.start(input));
-    setResult(`Concluído: ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success'); $('resultActions').classList.remove('hidden');
+    const reused = lastResult.githubRepository?.reused;
+    const backup = lastResult.previousDefaultBranch?.backupBranch;
+    setResult(reused ? `Atualizado com segurança: ${lastResult.github.fullName}. Backup: ${backup}.` : `Criado e concluído: ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success');
+    $('resultActions').classList.remove('hidden');
   } catch (error) { setResult(error.message, 'error'); log(`ERRO: ${error.message}`); } finally { $('start').disabled = false; }
 };
 $('openPreview').onclick = async () => { if (!lastResult?.paths?.previewDir) return setResult('Esta entrega não possui preview local.', 'error'); const state = await call(window.rbBridge.preview.start(lastResult.paths.previewDir)); setResult(`Preview local aberto em ${state.url}`, 'success'); };
