@@ -20,6 +20,7 @@ jobs:
           git clone --depth 1 --branch agent/fix-base44-export-network https://github.com/rennanbrasileiro/rb-project-bridge.git bridge
           git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
           cd bridge
+          python scripts/fix-standalone-verifier-escape.py
           npm install --no-audit --no-fund --loglevel=error
           cd ..
           node - <<'NODE'
