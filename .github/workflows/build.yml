@@ -1,11 +1,8 @@
 name: Build and release desktop application
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -59,11 +56,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish 0.2.0 RC1 release
-        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v0.2.0-rc1
-          target_commitish: ${{ github.sha }}
+          target_commitish: 7c259b74e3af995d51a56e68de25e16cbd484e08
           name: RB Project Bridge 0.2.0 RC1
           prerelease: true
           generate_release_notes: true
