@@ -36,17 +36,17 @@
         <div data-step="standalone"><span>2</span><strong>Desacoplar</strong><small>Remover runtime Base44</small></div>
         <div data-step="supabase"><span>3</span><strong>Supabase</strong><small>Schema, RLS e adapter</small></div>
         <div data-step="build"><span>4</span><strong>Build local</strong><small>Dist e preview navegável</small></div>
-        <div data-step="github-publish"><span>5</span><strong>Entregar</strong><small>GitHub privado + snapshot</small></div>
+        <div data-step="github-publish"><span>5</span><strong>Entregar</strong><small>Mesmo GitHub + histórico</small></div>
       </div>
       <p class="hint">No modo Standalone, o build é obrigatório. O preview usa modo demo local até um Supabase real ser conectado.</p>
     </section>
 
     <section class="card">
-      <h2>4. Repositório privado</h2>
-      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Nome<input id="repoName" placeholder="meu-produto"></label></div>
+      <h2>4. Repositório GitHub privado</h2>
+      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Nome do repositório<input id="repoName" placeholder="meu-produto"></label></div>
       <label>Descrição<input id="description" placeholder="Aplicação independente preparada pelo RB Project Bridge"></label>
-      <div class="private-lock"><strong>🔒 Privado obrigatório</strong><span>O Bridge cria e confirma a privacidade antes de publicar.</span></div>
-      <label><input type="checkbox" id="authorization"> Tenho autorização do proprietário</label>
+      <div class="private-lock"><strong>🔒 Reutilização segura</strong><span>Se o repositório já existir, ele será tornado privado, o estado atual será preservado em branches datadas e o conteúdo independente substituirá apenas a branch principal. Nenhuma branch será excluída.</span></div>
+      <label><input type="checkbox" id="authorization"> Tenho autorização do proprietário para atualizar este repositório</label>
     </section>
 
     <section class="card">
