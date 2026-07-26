@@ -39,8 +39,8 @@ test('generated adapter receives realtime subscribe compatibility', () => {
   const result = patchGeneratedAdapterSource(generatedAdapter());
   assert.equal(result.patched, true);
   assert.match(result.source, new RegExp(COMPATIBILITY_MARKER));
-  assert.match(result.source, /subscribeToEntity/);
-  assert.match(result.source, /entities: compatibleEntities/);
+  assert.match(result.source, /rbSubscribeToEntity/);
+  assert.match(result.source, /entities: rbCompatibleEntities/);
   assert.equal(patchGeneratedAdapterSource(result.source).patched, false);
 });
 
@@ -61,7 +61,7 @@ test('runtime compatibility patches a project and blocks unknown entity methods'
   assert.equal(result.adapterPatched, true);
   assert.equal(result.serviceWorkerPatched, true);
   assert.equal(result.unsupported.length, 0);
-  assert.match(await fs.readFile(path.join(root, 'src', 'api', 'base44Client.js'), 'utf8'), /subscribeToEntity/);
+  assert.match(await fs.readFile(path.join(root, 'src', 'api', 'base44Client.js'), 'utf8'), /rbSubscribeToEntity/);
   await fs.writeFile(path.join(root, 'src', 'Unknown.jsx'), 'base44.entities.Student.exportCsv();');
   await assert.rejects(() => applyRuntimeCompatibility(root), (error) => error.code === 'UNSUPPORTED_BASE44_RUNTIME_METHOD');
   await fs.rm(root, { recursive: true, force: true });
