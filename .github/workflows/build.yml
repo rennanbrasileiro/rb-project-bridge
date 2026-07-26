@@ -31,6 +31,18 @@ jobs:
         run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs tests/delivery-package.test.cjs
       - name: Rebuild completed preview
         run: node --test tests/preview-repair.test.cjs
+      - name: Upload temporary validation source
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rb-project-bridge-validation-source
+          path: |
+            electron/**
+            renderer/**
+            tests/**
+            package.json
+            package-lock.json
+          retention-days: 1
       - name: Run complete suite
         run: npm test
 
