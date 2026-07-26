@@ -1,4 +1,4 @@
-name: FitHub standalone diagnostic
+name: Validate RB Project Bridge 0.2.3
 
 on:
   pull_request:
@@ -6,30 +6,73 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  finalize:
     if: github.head_ref == 'agent/fix-base44-export-network'
     runs-on: ubuntu-latest
     steps:
-      - name: Reproduce FitHub conversion and build
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-base44-export-network
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply final verifier correction and remove temporary scripts
         shell: bash
         run: |
-          set -euo pipefail
-          git clone --depth 1 --branch agent/fix-base44-export-network https://github.com/rennanbrasileiro/rb-project-bridge.git bridge
-          git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
-          cd bridge
           python scripts/fix-standalone-verifier-escape.py
-          npm install --no-audit --no-fund --loglevel=error
-          cd ..
+          rm -f scripts/apply-0.2.3-resilience.py scripts/fix-0.2.3-patcher.py scripts/apply-0.2.3-safety.py scripts/fix-standalone-verifier-escape.py scripts/patch-base44-export-network.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add electron/services/standalone-service.cjs scripts
+          if git diff --cached --quiet; then
+            echo 'Final correction already committed.'
+          else
+            git commit -m 'Finalize escape-safe standalone verification'
+            git push origin HEAD:agent/fix-base44-export-network
+          fi
+
+  validate:
+    needs: finalize
+    if: always() && needs.finalize.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-base44-export-network
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm run check
+
+  fithub:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-base44-export-network
+          path: bridge
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Bridge dependencies
+        working-directory: bridge
+        run: npm install --no-audit --no-fund --loglevel=error
+      - name: Clone and validate complete FitHub source
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
           node - <<'NODE'
           const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
           const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
           (async () => {
             const result = await service.transform('fithub', { projectName: 'FitHub Personal Trainer' });
-            console.log('TRANSFORM_RESULT', JSON.stringify({ gate: result.gate, entities: result.entities.length, functions: result.functions.length }));
             if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
+            console.log(`Entities converted: ${result.entities.length}; functions archived: ${result.functions.length}`);
           })().catch((error) => { console.error(error.stack || error); process.exit(1); });
           NODE
           cd fithub
@@ -37,3 +80,43 @@ jobs:
           npm run check:standalone
           npm run build:demo
           test -f dist/index.html
+
+  windows:
+    needs: [validate, fithub]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-base44-export-network
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm run check
+      - run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify direct Base44 OAuth in packaged application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
+          $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
+          $env:RB_BRIDGE_SMOKE_MARKER = $marker
+          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.3-x64.exe') -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
+          $proof = Get-Content $marker -Raw | ConvertFrom-Json
+          if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem release -File | Where-Object { $_.Extension -eq '.exe' } | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content release/SHA256SUMS.txt -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rb-project-bridge-windows-0.2.3-clean
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
