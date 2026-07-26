@@ -22,10 +22,11 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run check
+      - name: Clone complete FitHub source
+        run: git clone --depth 1 --branch main https://github.com/rennanbrasileiro/fithub.git fixture-fithub
       - name: Convert complete FitHub source
         shell: bash
         run: |
-          git clone --depth 1 --branch main https://github.com/rennanbrasileiro/fithub.git fixture-fithub
           node - <<'NODE'
           const { StandaloneService } = require('./electron/services/standalone-service.cjs');
           const service = new StandaloneService({ logger: { info(){}, warn(){} }, emit(){} });
