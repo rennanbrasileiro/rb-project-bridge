@@ -20,13 +20,11 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
       - name: Validate syntax
-        run: node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js
+        run: npm run check -- --test-name-pattern="a^"
+      - name: Validate runtime compatibility and readiness
+        run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs
       - name: Rebuild completed preview
-        run: node --test --test-name-pattern="rebuilds and runtime-validates" tests/preview-repair.test.cjs
-      - name: Reject unsafe repair path
-        run: node --test --test-name-pattern="blocks report paths" tests/preview-repair.test.cjs
-      - name: Validate repair interface contract
-        run: node --test --test-name-pattern="renderer exposes" tests/preview-repair.test.cjs
+        run: node --test tests/preview-repair.test.cjs
       - name: Run complete suite
         run: npm test
 
@@ -50,7 +48,7 @@ jobs:
           $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
           $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
           $env:RB_BRIDGE_SMOKE_MARKER = $marker
-          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.7-x64.exe') -Wait -PassThru
+          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.3.0-x64.exe') -Wait -PassThru
           if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
           $proof = Get-Content $marker -Raw | ConvertFrom-Json
           if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
@@ -63,21 +61,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.2.7
+          name: rb-project-bridge-windows-0.3.0
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.2.7 RC1 release
+      - name: Publish 0.3.0 RC1 release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.2.7-rc1
+          tag_name: v0.3.0-rc1
           target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.2.7 RC1
+          name: RB Project Bridge 0.3.0 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.2.7-x64.exe
-            release/RB-Project-Bridge-Portable-0.2.7-x64.exe
+            release/RB-Project-Bridge-Setup-0.3.0-x64.exe
+            release/RB-Project-Bridge-Portable-0.3.0-x64.exe
             release/SHA256SUMS.txt
