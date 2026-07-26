@@ -11,38 +11,10 @@ permissions:
   contents: write
 
 jobs:
-  patch:
-    if: github.head_ref == 'agent/fix-github-workflow-scope'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-github-workflow-scope
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Apply workflow scope and retry patch
-        shell: bash
-        run: |
-          if grep -q 'async ensureDeliveryScopes' electron/services/github-service.cjs && grep -q '"version": "0.2.4"' package.json; then
-            echo 'Patch already applied.'
-          else
-            python scripts/apply-0.2.4-workflow-scope.py
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add electron renderer tests package.json .github/workflows/build.yml
-            git commit -m 'Fix GitHub workflow scope and resumable delivery'
-            git push origin HEAD:agent/fix-github-workflow-scope
-          fi
-
   validate:
-    needs: patch
-    if: always() && needs.patch.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-github-workflow-scope
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -54,8 +26,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-github-workflow-scope
       - uses: actions/setup-node@v4
         with:
           node-version: 22
