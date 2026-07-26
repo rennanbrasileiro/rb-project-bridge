@@ -17,6 +17,7 @@ test('export removes temporary tar and resets destination between attempts', () 
 test('evolved repositories are delivered through a pull request', () => {
   const source = fs.readFileSync(require.resolve('../electron/services/migration-service.cjs'), 'utf8');
   assert.match(source, /repositoryEvolved/);
-  assert.match(source, /deliveryStrategy = 'pull-request'/);
+  assert.match(source, /strategy: 'pull-request'/);
+  assert.match(source, /publishPlanFor/);
   assert.match(source, /createPullRequest/);
 });
