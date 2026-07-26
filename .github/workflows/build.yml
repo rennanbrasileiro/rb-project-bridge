@@ -82,11 +82,18 @@ jobs:
           NODE
       - name: Install, audit and build transformed FitHub
         working-directory: fithub
+        shell: bash
         run: |
-          npm install --no-audit --no-fund --loglevel=error
-          npm run check:standalone
-          npm run build:demo
-          test -f dist/index.html
+          set +e
+          {
+            npm install --no-audit --no-fund --loglevel=error
+            npm run check:standalone
+            npm run build:demo
+            test -f dist/index.html
+          } > fithub-build.log 2>&1
+          status=$?
+          tail -n 120 fithub-build.log
+          exit "$status"
 
   windows:
     needs: [validate, fithub]
