@@ -9,37 +9,53 @@
 </head>
 <body>
   <main>
-    <header><img src="../assets/icon.png" alt=""><div><h1>RB Project Bridge</h1><p>Base44 → auditoria → GitHub</p></div></header>
+    <header><img src="../assets/icon.png" alt=""><div><h1>RB Project Bridge</h1><p>Exportar → Desacoplar → Supabase → Build local → GitHub privado</p></div><span id="version" class="badge"></span></header>
+
     <section class="card">
       <h2>1. Conectar contas</h2>
-      <div class="row"><button id="base44Login">Conectar Base44</button><span id="base44Status">Não conectado</span></div>
-      <div id="base44AuthBox" class="auth-box hidden" aria-live="polite">
-        <div>
-          <strong>Autorize a Base44 no navegador</strong>
-          <p>Confirme este código:</p>
-          <code id="base44DeviceCode">—</code>
+      <div class="connection-grid">
+        <div><div class="row"><button id="base44Login">Conectar Base44</button><span id="base44Status" class="status">Não conectado</span></div>
+          <div id="base44AuthBox" class="auth-box hidden" aria-live="polite"><strong>Autorize a Base44</strong><p>Confirme este código:</p><code id="base44DeviceCode">—</code><div class="row auth-actions"><button id="copyBase44Code" type="button">Copiar</button><button id="openBase44Device" type="button">Abrir autorização</button></div></div>
         </div>
-        <div class="row auth-actions">
-          <button id="copyBase44Code" type="button">Copiar código</button>
-          <button id="openBase44Device" type="button">Abrir autorização</button>
-        </div>
-      </div>
-      <div class="row"><button id="githubLogin">Conectar GitHub</button><span id="githubStatus">Não conectado</span></div>
-      <div id="githubAuthBox" class="auth-box hidden" aria-live="polite">
-        <div>
-          <strong>Autorize o GitHub no navegador</strong>
-          <p>Use este código de uso único:</p>
-          <code id="githubDeviceCode">—</code>
-        </div>
-        <div class="row auth-actions">
-          <button id="copyGitHubCode" type="button">Copiar código</button>
-          <button id="openGitHubDevice" type="button">Abrir autorização</button>
+        <div><div class="row"><button id="githubLogin">Conectar GitHub</button><span id="githubStatus" class="status">Não conectado</span></div>
+          <div id="githubAuthBox" class="auth-box hidden" aria-live="polite"><strong>Autorize o GitHub</strong><p>Use este código:</p><code id="githubDeviceCode">—</code><div class="row auth-actions"><button id="copyGitHubCode" type="button">Copiar</button><button id="openGitHubDevice" type="button">Abrir autorização</button></div></div>
         </div>
       </div>
     </section>
-    <section class="card"><h2>2. Projeto e destino</h2><label>Projeto Base44<select id="project"></select></label><label>Pasta de entrega<div class="row"><input id="output" readonly><button id="chooseOutput">Selecionar</button></div></label></section>
-    <section class="card"><h2>3. Repositório</h2><label>Conta GitHub<select id="owner"></select></label><label>Nome<input id="repoName" placeholder="agilehub"></label><label>Descrição<input id="description"></label><label><input type="checkbox" id="publicRepo"> Repositório público</label><label><input type="checkbox" id="buildValidation"> Validar build em cópia isolada</label><label><input type="checkbox" id="authorization"> Tenho autorização do proprietário</label></section>
-    <section class="card"><h2>4. Executar</h2><div class="row"><button id="start" class="primary">Iniciar migração</button><button id="cancel">Cancelar</button></div><pre id="log"></pre><div id="result"></div></section>
+
+    <section class="card">
+      <h2>2. Produto e pasta local</h2>
+      <div class="grid two"><label>Projeto Base44<select id="project"></select></label><label>Pasta de entrega<div class="row"><input id="output" readonly><button id="chooseOutput">Selecionar</button></div></label></div>
+    </section>
+
+    <section class="card">
+      <h2>3. Modo de entrega</h2>
+      <label>Fluxo<select id="deliveryMode"><option value="standalone-supabase" selected>Standalone Supabase — recomendado</option><option value="snapshot">Somente snapshot Base44</option></select></label>
+      <div id="pipeline" class="pipeline">
+        <div data-step="export"><span>1</span><strong>Exportar</strong><small>Backup fiel e sanitizado</small></div>
+        <div data-step="standalone"><span>2</span><strong>Desacoplar</strong><small>Remover runtime Base44</small></div>
+        <div data-step="supabase"><span>3</span><strong>Supabase</strong><small>Schema, RLS e adapter</small></div>
+        <div data-step="build"><span>4</span><strong>Build local</strong><small>Dist e preview navegável</small></div>
+        <div data-step="github-publish"><span>5</span><strong>Entregar</strong><small>GitHub privado + snapshot</small></div>
+      </div>
+      <p class="hint">No modo Standalone, o build é obrigatório. O preview usa modo demo local até um Supabase real ser conectado.</p>
+    </section>
+
+    <section class="card">
+      <h2>4. Repositório privado</h2>
+      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Nome<input id="repoName" placeholder="meu-produto"></label></div>
+      <label>Descrição<input id="description" placeholder="Aplicação independente preparada pelo RB Project Bridge"></label>
+      <div class="private-lock"><strong>🔒 Privado obrigatório</strong><span>O Bridge cria e confirma a privacidade antes de publicar.</span></div>
+      <label><input type="checkbox" id="authorization"> Tenho autorização do proprietário</label>
+    </section>
+
+    <section class="card">
+      <h2>5. Executar e validar</h2>
+      <div class="row"><button id="start" class="primary">Executar pipeline completo</button><button id="cancel">Cancelar</button></div>
+      <pre id="log"></pre>
+      <div id="result"></div>
+      <div id="resultActions" class="row result-actions hidden"><button id="openPreview" class="primary">Abrir preview local</button><button id="openFolder">Abrir pasta</button><button id="openRepo">Abrir GitHub</button><button id="stopPreview">Parar preview</button></div>
+    </section>
   </main>
   <script src="app.js"></script>
 </body>
