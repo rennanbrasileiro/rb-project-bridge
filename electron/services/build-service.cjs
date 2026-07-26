@@ -6,9 +6,14 @@ const path = require('node:path');
 const { runProcess } = require('../core/process-runner.cjs');
 const { BridgeError } = require('../core/errors.cjs');
 const { pathExists, readJson, copyDirectory } = require('../core/fs-utils.cjs');
+const { applyRuntimeCompatibility } = require('./runtime-compatibility-service.cjs');
 
 class BuildService {
-  constructor({ logger, emit }) { this.logger = logger; this.emit = emit; }
+  constructor({ logger, emit, runtimeValidator }) {
+    this.logger = logger;
+    this.emit = emit;
+    this.runtimeValidator = runtimeValidator;
+  }
 
   async inspect(root) {
     const packagePath = path.join(root, 'package.json');
@@ -32,15 +37,29 @@ class BuildService {
   }
 
   normalizeOptions(consentOrOptions) {
-    if (typeof consentOrOptions === 'object' && consentOrOptions !== null) return { consent: Boolean(consentOrOptions.consent), buildScript: consentOrOptions.buildScript, previewDestination: consentOrOptions.previewDestination, syncLockfile: Boolean(consentOrOptions.syncLockfile) };
-    return { consent: Boolean(consentOrOptions), buildScript: null, previewDestination: null, syncLockfile: false };
+    if (typeof consentOrOptions === 'object' && consentOrOptions !== null) {
+      return {
+        consent: Boolean(consentOrOptions.consent),
+        buildScript: consentOrOptions.buildScript,
+        previewDestination: consentOrOptions.previewDestination,
+        syncLockfile: Boolean(consentOrOptions.syncLockfile),
+        runtimeValidation: consentOrOptions.runtimeValidation !== false,
+      };
+    }
+    return { consent: Boolean(consentOrOptions), buildScript: null, previewDestination: null, syncLockfile: false, runtimeValidation: true };
   }
 
   async validateBuild(root, consentOrOptions, signal) {
     const options = this.normalizeOptions(consentOrOptions);
+    let compatibility = null;
+    if (options.buildScript === 'build:demo' || options.previewDestination) {
+      this.emit('migration:progress', { step: 'build', status: 'running', message: 'Verificando compatibilidade do runtime standalone...' });
+      compatibility = await applyRuntimeCompatibility(root);
+    }
+
     const inspection = await this.inspect(root);
-    if (!inspection.valid) return { status: 'failed', inspection, install: null, build: null };
-    if (!options.consent) return { status: 'skipped', inspection, reason: 'Project code execution was not authorized.' };
+    if (!inspection.valid) return { status: 'failed', inspection, compatibility, install: null, build: null, runtime: null };
+    if (!options.consent) return { status: 'skipped', inspection, compatibility, reason: 'Project code execution was not authorized.' };
 
     const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rb-project-bridge-build-'));
     const sandboxProject = path.join(sandboxRoot, 'project');
@@ -59,6 +78,7 @@ class BuildService {
       const script = options.buildScript || (inspection.packageJson?.scripts?.['build:demo'] ? 'build:demo' : inspection.packageJson?.scripts?.build ? 'build' : null);
       let build = null;
       let preview = null;
+      let runtime = null;
       if (script) {
         this.emit('migration:progress', { step: 'build', status: 'running', message: `Executando npm run ${script} na cópia isolada...` });
         build = await runProcess(process.execPath, [npmCli, 'run', script], { ...common, timeoutMs: 30 * 60 * 1000, env: { ...common.env, npm_config_ignore_scripts: 'false' } });
@@ -69,10 +89,25 @@ class BuildService {
           await copyDirectory(path.join(sandboxProject, builtDirectory), options.previewDestination);
           preview = { directory: options.previewDestination, sourceDirectory: builtDirectory };
         }
+        if (preview && options.runtimeValidation) {
+          if (!this.runtimeValidator) {
+            runtime = { passed: false, status: 'unavailable', errors: ['O validador Chromium não está disponível neste ambiente.'] };
+          } else {
+            this.emit('migration:progress', { step: 'build', status: 'running', message: 'Abrindo o bundle em Chromium isolado e confirmando a renderização...' });
+            runtime = await this.runtimeValidator(preview.directory, { signal });
+          }
+          if (!runtime?.passed) {
+            throw new BridgeError(
+              'PREVIEW_RUNTIME_FAILED',
+              `O bundle compilou, mas a aplicação não renderizou corretamente no navegador: ${(runtime?.errors || []).slice(0, 3).join(' | ') || 'a raiz da aplicação permaneceu vazia.'}`,
+              { runtime, preview },
+            );
+          }
+        }
       }
-      this.logger.info('build.validation.complete', { root, built: Boolean(build), isolated: true, preview: preview?.directory });
-      this.emit('migration:progress', { step: 'build', status: 'complete', message: build ? 'Build local concluído e preview preparado.' : 'Validação de dependências concluída.' });
-      return { status: 'passed', inspection, isolated: true, install: { code: install.code, command: installCommand }, build: build ? { code: build.code, script } : null, preview };
+      this.logger.info('build.validation.complete', { root, built: Boolean(build), isolated: true, preview: preview?.directory, runtimePassed: runtime?.passed, compatibility });
+      this.emit('migration:progress', { step: 'build', status: 'complete', message: runtime?.passed ? 'Build e execução local validados; preview pronto.' : build ? 'Build local concluído e preview preparado.' : 'Validação de dependências concluída.' });
+      return { status: 'passed', inspection, compatibility, isolated: true, install: { code: install.code, command: installCommand }, build: build ? { code: build.code, script } : null, preview, runtime };
     } finally {
       await fs.rm(sandboxRoot, { recursive: true, force: true }).catch(() => null);
     }
