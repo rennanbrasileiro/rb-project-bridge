@@ -1,0 +1,33 @@
+{
+  "name": "rb-project-bridge",
+  "version": "0.1.1",
+  "description": "Desktop bridge to export Base44 projects, audit them, and publish safely to GitHub.",
+  "main": "electron/main.cjs",
+  "author": "RB HUB",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check renderer/app.js && npm test",
+    "dist:win": "electron-builder --win portable nsis",
+    "dist:linux": "electron-builder --linux AppImage",
+    "dist:dir": "electron-builder --dir"
+  },
+  "dependencies": { "adm-zip": "0.5.16", "base44": "0.1.5", "tar": "7.5.4", "npm": "11.4.2" },
+  "devDependencies": { "electron": "43.2.0", "electron-builder": "26.15.3" },
+  "build": {
+    "appId": "br.com.rbhub.projectbridge",
+    "productName": "RB Project Bridge",
+    "asar": true,
+    "asarUnpack": ["node_modules/base44/**", "node_modules/npm/**"],
+    "files": ["electron/**/*", "renderer/**/*", "assets/**/*", "package.json", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+    "directories": { "output": "release" },
+    "win": { "target": ["portable", "nsis"], "icon": "assets/icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "artifactName": "RB-Project-Bridge-Setup-${version}-${arch}.${ext}" },
+    "portable": { "artifactName": "RB-Project-Bridge-Portable-${version}-${arch}.${ext}" },
+    "linux": { "target": "AppImage", "category": "Development", "icon": "assets/icon.png" }
+  }
+}
