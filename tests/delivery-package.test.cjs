@@ -20,13 +20,17 @@ function fixture(jobRoot, repositoryDir) {
   };
 }
 
-test('builds a client-facing delivery manifest from the contracted package', () => {
-  const manifest = buildDeliveryManifest(fixture('/tmp/job', '/tmp/job/repository'));
+test('keeps a prepared client workspace pending until its local backend is validated', () => {
+  const report = fixture('/tmp/job', '/tmp/job/repository');
+  let manifest = buildDeliveryManifest(report);
   assert.equal(manifest.contractedPackage.id, 'workspace');
   assert.equal(manifest.targetProfile.id, 'supabase-cloud-static');
   assert.equal(manifest.client.name, 'Cliente Piloto');
-  assert.equal(manifest.acceptance.acceptedByAutomation, true);
+  assert.equal(manifest.acceptance.acceptedByAutomation, false);
   assert.ok(manifest.unresolved.some((item) => /Stripe/.test(item)));
+  report.workspaceValidation = { passed: true };
+  manifest = buildDeliveryManifest(report);
+  assert.equal(manifest.acceptance.acceptedByAutomation, true);
 });
 
 test('marks AWS as assessment-only instead of promising automatic Lambda deployment', () => {
