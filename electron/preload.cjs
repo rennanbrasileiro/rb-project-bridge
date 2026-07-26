@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const allowedEvents = new Set([
-  'base44:output', 'github:output', 'build:output', 'migration:progress', 'toolchain:progress',
+  'base44:auth', 'base44:output', 'github:output', 'build:output', 'migration:progress', 'toolchain:progress',
 ]);
 
 contextBridge.exposeInMainWorld('rbBridge', {

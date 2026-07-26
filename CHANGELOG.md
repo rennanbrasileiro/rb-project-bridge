@@ -1,12 +1,22 @@
 # Changelog
 
-## 0.1.4 — Argumentos Base44 normalizados no Portable
+## 0.1.5 — Autenticação Base44 reimplementada por OAuth direto
+
+- Removida completamente a execução da CLI Base44 dentro do Electron.
+- Implementado o fluxo oficial OAuth Device Authorization diretamente pelos endpoints `/oauth/device/code`, `/oauth/token` e `/oauth/userinfo`.
+- Código e link da Base44 exibidos em painel próprio, fora do log.
+- Sessão Base44 salva e renovada no diretório isolado do aplicativo.
+- Dependência npm `base44` removida do pacote final.
+- Smoke test exige prova JSON criada pelo aplicativo com código real e URL oficial da Base44.
+- Validação confirmada tanto em `win-unpacked` quanto no Portable autoextraível executado em `%TEMP%`.
+- Suíte ampliada para 26 testes automatizados.
+
+## 0.1.4 — Tentativa de normalização dos argumentos Base44
 
 - Adicionado um adaptador entre o `utilityProcess` e a CLI Base44.
-- O adaptador reconstrói `process.argv` no formato padrão do Node antes de importar `base44/bin/run.js`.
-- Eliminado o caminho duplicado do módulo que era interpretado pela Base44 como comando desconhecido.
-- O smoke test agora abre também o executável Portable final, reproduzindo a extração em `%TEMP%` usada no computador do usuário.
-- Suíte ampliada para 24 testes automatizados.
+- O adaptador reconstruía `process.argv` antes de importar `base44/bin/run.js`.
+- Limitação identificada no teste real: a CLI ainda recebia o próprio caminho como comando no Portable.
+- O smoke test anterior verificava o código de saída, mas não comprovava que o fluxo OAuth tinha sido iniciado.
 
 ## 0.1.3 — Execução Base44 parcialmente corrigida
 

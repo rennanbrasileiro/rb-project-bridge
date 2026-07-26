@@ -33,21 +33,48 @@ jobs:
       - run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Verify Base44 runner in unpacked and portable applications
+      - name: Verify direct Base44 OAuth in unpacked and portable applications
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
+          $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
+          $diagnostics = Join-Path $env:RUNNER_TEMP 'rb-base44-oauth-diagnostics'
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
           $executables = @(
-            (Resolve-Path 'release/win-unpacked/RB Project Bridge.exe'),
-            (Resolve-Path 'release/RB-Project-Bridge-Portable-0.1.4-x64.exe')
+            @{ Name = 'unpacked'; Path = (Resolve-Path 'release/win-unpacked/RB Project Bridge.exe') },
+            @{ Name = 'portable'; Path = (Resolve-Path 'release/RB-Project-Bridge-Portable-0.1.5-x64.exe') }
           )
-          foreach ($exe in $executables) {
-            Write-Host "Testing $exe"
-            $process = Start-Process -FilePath $exe -ArgumentList '--smoke-base44-cli' -Wait -PassThru
-            if ($process.ExitCode -ne 0) {
-              throw "Base44 smoke test failed for $exe with exit code $($process.ExitCode)."
+          $failures = @()
+          foreach ($item in $executables) {
+            $marker = Join-Path $diagnostics "$($item.Name).json"
+            Remove-Item $marker -Force -ErrorAction SilentlyContinue
+            $env:RB_BRIDGE_SMOKE_MARKER = $marker
+            Write-Host "Testing real Base44 OAuth through $($item.Path)"
+            $process = Start-Process -FilePath $item.Path -Wait -PassThru
+            if (-not (Test-Path $marker)) {
+              $fallback = @{ ok = $false; error = 'Application did not create marker'; exitCode = $process.ExitCode; executable = "$($item.Path)" } | ConvertTo-Json
+              $fallback | Set-Content $marker -Encoding utf8
+            }
+            $raw = Get-Content $marker -Raw
+            Write-Host "OAuth proof [$($item.Name)]: $raw"
+            try { $proof = $raw | ConvertFrom-Json } catch { $proof = $null }
+            if ($process.ExitCode -ne 0) { $failures += "$($item.Name): exit code $($process.ExitCode)" }
+            if (-not $proof -or -not $proof.ok) { $failures += "$($item.Name): $($proof.error)" }
+            if ($proof.ok -and (-not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/')) {
+              $failures += "$($item.Name): invalid device-code response"
             }
           }
+          if ($failures.Count -gt 0) {
+            throw ($failures -join '; ')
+          }
+      - name: Upload Base44 OAuth diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base44-oauth-diagnostics
+          path: ${{ runner.temp }}/rb-base44-oauth-diagnostics/*.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Generate SHA-256 checksums
         shell: pwsh
         run: |
@@ -57,21 +84,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.1.4
+          name: rb-project-bridge-windows-0.1.5
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.1.4 RC1 release
+      - name: Publish 0.1.5 RC1 release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.1.4-rc1
+          tag_name: v0.1.5-rc1
           target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.1.4 RC1
+          name: RB Project Bridge 0.1.5 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.1.4-x64.exe
-            release/RB-Project-Bridge-Portable-0.1.4-x64.exe
+            release/RB-Project-Bridge-Setup-0.1.5-x64.exe
+            release/RB-Project-Bridge-Portable-0.1.5-x64.exe
             release/SHA256SUMS.txt
