@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   validate:
@@ -27,8 +28,8 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          LOG="$GITHUB_WORKSPACE/homologation.log"
-          EXIT_FILE="$GITHUB_WORKSPACE/homologation.exit"
+          LOG="$RUNNER_TEMP/homologation.log"
+          EXIT_FILE="$RUNNER_TEMP/homologation.exit"
           {
             git clone --depth 1 --branch main https://github.com/rennanbrasileiro/fithub.git fixture-fithub
             node - <<'NODE'
@@ -47,27 +48,37 @@ jobs:
             npm run check:standalone
             npm run build:demo
             test -f dist/index.html
-          } 2>&1 | tee "$LOG"
-          status=${PIPESTATUS[0]}
+          } > "$LOG" 2>&1
+          status=$?
           echo "$status" > "$EXIT_FILE"
+          echo '--- FitHub homologation tail ---'
+          tail -n 100 "$LOG"
           exit 0
-      - name: Upload FitHub homologation diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fithub-v2-homologation
-          path: |
-            homologation.log
-            homologation.exit
-            fixture-fithub/MIGRATION_REPORT.md
-            fixture-fithub/MIGRATION_REPORT.json
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Publish concise diagnostic issue
+        if: steps.homologate.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status="$(cat "$RUNNER_TEMP/homologation.exit" 2>/dev/null || echo 99)"
+          if [ "$status" != '0' ]; then
+            {
+              echo '## FitHub V2 homologation failure'
+              echo
+              echo '- Commit: `${{ github.sha }}`'
+              echo '- Exit code: `'$status'`'
+              echo
+              echo '```text'
+              tail -n 100 "$RUNNER_TEMP/homologation.log"
+              echo '```'
+            } > "$RUNNER_TEMP/failure.md"
+            gh issue create --repo rennanbrasileiro/rb-project-bridge --title 'Diagnostic — FitHub V2 homologation failure' --body-file "$RUNNER_TEMP/failure.md"
+          fi
       - name: Enforce FitHub homologation result
         shell: bash
         run: |
-          test -f homologation.exit
-          test "$(cat homologation.exit)" = '0'
+          test -f "$RUNNER_TEMP/homologation.exit"
+          test "$(cat "$RUNNER_TEMP/homologation.exit")" = '0'
 
   windows:
     if: github.head_ref == 'agent/v2-standalone-supabase'
