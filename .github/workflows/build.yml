@@ -50,8 +50,46 @@ jobs:
       - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run check
 
-  windows:
+  fithub:
     needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-standalone-gate
+          path: bridge
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Bridge dependencies
+        working-directory: bridge
+        run: npm install --no-audit --no-fund --loglevel=error
+      - name: Clone complete FitHub source
+        run: git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
+      - name: Convert FitHub to standalone Supabase
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
+          const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
+          service.transform('fithub', { projectName: 'FitHub Personal Trainer' })
+            .then((result) => {
+              console.log(`Entities: ${result.entities.length}`);
+              console.log(`Archived functions: ${result.functions.length}`);
+              if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
+            })
+            .catch((error) => { console.error(error); process.exit(1); });
+          NODE
+      - name: Install, audit and build transformed FitHub
+        working-directory: fithub
+        run: |
+          npm install --no-audit --no-fund --loglevel=error
+          npm run check:standalone
+          npm run build:demo
+          test -f dist/index.html
+
+  windows:
+    needs: [validate, fithub]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
