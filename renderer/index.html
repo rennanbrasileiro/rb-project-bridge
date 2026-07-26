@@ -40,10 +40,10 @@
         <div data-step="export"><span>1</span><strong>Exportar</strong><small>Backup fiel, sanitizado e verificável</small></div>
         <div data-step="standalone"><span>2</span><strong>Desacoplar</strong><small>Remover dependências do runtime Base44</small></div>
         <div data-step="supabase"><span>3</span><strong>Supabase</strong><small>Schema, RLS, adapter e modo demo</small></div>
-        <div data-step="build"><span>4</span><strong>Validar</strong><small>Instalação isolada, build e preview</small></div>
+        <div data-step="build"><span>4</span><strong>Validar</strong><small>Instalação isolada, build, Chromium e preview</small></div>
         <div data-step="github-publish"><span>5</span><strong>Entregar</strong><small>Snapshot, backup de branches e publicação</small></div>
       </div>
-      <p class="hint">O preview em modo demo é gerado antes da entrega externa. Se o GitHub interromper a publicação, você ainda poderá abrir e validar o produto localmente.</p>
+      <p class="hint">O preview em modo demo é gerado antes da entrega externa. Operações antigas podem ser reconstruídas e revalidadas sem repetir a exportação ou alterar o GitHub.</p>
     </section>
 
     <section class="card">
@@ -59,14 +59,16 @@
     <section class="card execution-card">
       <div class="section-heading"><div><span class="eyebrow">Etapa 5</span><h2>Executar e validar</h2></div><p>Uma ação principal gera o produto, valida o preview e conclui a entrega. Checkpoints impedem retrabalho.</p></div>
       <div id="resumeCard" class="resume-card hidden"><div><strong id="resumeTitle">Entrega pendente</strong><p id="resumeMessage"></p></div><span>Checkpoint disponível</span></div>
+      <div id="completedCard" class="resume-card hidden"><div><strong id="completedTitle">Última operação disponível</strong><p id="completedMessage"></p></div><span>Preview reconstruível</span></div>
       <div class="row action-row"><button id="start" class="primary">Gerar, validar e entregar</button><button id="retryLast" class="secondary hidden">Continuar do ponto salvo</button><button id="cancel" class="ghost" disabled>Cancelar</button></div>
 
       <div id="result" class="result-panel idle" aria-live="polite"><strong id="resultTitle">Pronto para iniciar</strong><p id="resultMessage">Preencha as etapas acima. O resultado e a próxima ação aparecerão aqui.</p><div id="resultMeta" class="result-meta"></div></div>
-      <div id="resultActions" class="row result-actions hidden"><button id="openPreview" class="primary">Abrir preview</button><button id="openFolder">Abrir pasta da operação</button><button id="openRepo">Abrir destino</button><button id="stopPreview" class="ghost">Parar preview</button></div>
+      <div id="resultActions" class="row result-actions hidden"><button id="openPreview" class="primary">Abrir preview</button><button id="repairPreview" class="secondary">Recriar e validar preview</button><button id="openFolder">Abrir pasta da operação</button><button id="openRepo">Abrir destino</button><button id="stopPreview" class="ghost">Parar preview</button></div>
 
       <details id="logDetails" class="technical-details"><summary>Ver detalhes técnicos</summary><pre id="log"></pre></details>
     </section>
   </main>
   <script src="app.js"></script>
+  <script src="repair-preview.js"></script>
 </body>
 </html>
