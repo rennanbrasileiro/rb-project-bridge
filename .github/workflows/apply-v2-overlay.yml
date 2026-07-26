@@ -24,8 +24,9 @@ jobs:
           base64 --decode rb-v2-overlay.b64 > rb-v2-overlay.zip
           echo '23d6a25cf19cc173a35293c1f6ec0a4ac82cd7477f81db9d0ef4c8126aa871e1  rb-v2-overlay.zip' | sha256sum --check
           unzip -o rb-v2-overlay.zip -d .
+          git checkout HEAD -- .github/workflows/build.yml
           rm -rf .rb-v2 rb-v2-overlay.b64 rb-v2-overlay.zip
-          rm -f docs/V2_EXECUTION_MARKER.md .github/workflows/apply-v2-overlay.yml
+          rm -f docs/V2_EXECUTION_MARKER.md
       - name: Commit exact V2 source
         shell: bash
         run: |
@@ -33,6 +34,7 @@ jobs:
           git config user.name 'RB Project Bridge Bot'
           git config user.email 'rennanbrasileiro@users.noreply.github.com'
           git add -A
+          git reset -- .github/workflows/build.yml .github/workflows/apply-v2-overlay.yml
           if git diff --cached --quiet; then
             echo 'No overlay changes to commit.'
           else
