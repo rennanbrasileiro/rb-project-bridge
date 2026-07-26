@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 — Autenticação corrigida
+
+- Corrigida a execução da CLI Base44 no aplicativo empacotado, usando o caminho físico `app.asar.unpacked`.
+- Abertura automática das páginas de autorização Base44 e GitHub.
+- Exibição destacada do código temporário do login GitHub.
+- Estados visuais de espera, sucesso e erro nos botões de conexão.
+- Adicionados testes de regressão para caminho empacotado, URLs de autorização e código de dispositivo.
+- Pipeline Windows agora executa a CLI Base44 empacotada antes de liberar o instalador.
+- Suíte ampliada de 19 para 22 testes automatizados.
+
 ## 0.1.1 — MVP RC2
 
 - Nomes distintos para o instalador NSIS e a versão portátil do Windows.
