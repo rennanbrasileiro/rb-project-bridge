@@ -187,9 +187,14 @@ function verificationScriptSource() {
 import path from 'node:path';
 const root = process.cwd();
 const ignored = new Set(['node_modules','.git','dist','build','coverage']);
+const sourceExtensions = new Set(['.js','.jsx','.ts','.tsx','.json','.jsonc','.mjs','.cjs']);
+const archivedExtensions = new Set(['js','jsx','ts','tsx','mjs','cjs']);
 const failures = [];
-function isArchived(file) { const relative=path.relative(root,file).replaceAll('\\','/'); return /^supabase\/functions\/.+\/source\.base44\.(js|jsx|ts|tsx|mjs|cjs)$/i.test(relative); }
-function walk(dir) { for (const entry of fs.readdirSync(dir,{withFileTypes:true})) { if (ignored.has(entry.name)) continue; const file = path.join(dir,entry.name); if (entry.isDirectory()) walk(file); else if (/\.(js|jsx|ts|tsx|json|jsonc|mjs|cjs)$/.test(entry.name)) { if (isArchived(file)) continue; const text=fs.readFileSync(file,'utf8'); if (/@base44\/(sdk|vite-plugin)|from ['\"]base44['\"]/.test(text)) failures.push(path.relative(root,file)); } } }
+function normalizedRelative(file) { return path.relative(root,file).split(path.sep).join('/'); }
+function isVerifier(file) { return normalizedRelative(file) === 'scripts/verify-standalone.mjs'; }
+function isArchived(file) { const relative=normalizedRelative(file); const parts=relative.split('/'); const fileName=parts.at(-1)||''; const extension=(fileName.split('.').at(-1)||'').toLowerCase(); return parts[0]==='supabase' && parts[1]==='functions' && fileName.startsWith('source.base44.') && archivedExtensions.has(extension); }
+function containsBase44Runtime(text) { return text.includes('@base44/sdk') || text.includes('@base44/vite-plugin') || text.includes("from 'base44'") || text.includes('from "base44"'); }
+function walk(dir) { for (const entry of fs.readdirSync(dir,{withFileTypes:true})) { if (ignored.has(entry.name)) continue; const file=path.join(dir,entry.name); if (entry.isDirectory()) { walk(file); continue; } if (!sourceExtensions.has(path.extname(entry.name).toLowerCase())) continue; if (isVerifier(file) || isArchived(file)) continue; const text=fs.readFileSync(file,'utf8'); if (containsBase44Runtime(text)) failures.push(normalizedRelative(file)); } }
 walk(root);
 const packageJson=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 for (const name of Object.keys({...packageJson.dependencies,...packageJson.devDependencies})) if (name === 'base44' || name.startsWith('@base44/')) failures.push('package.json:' + name);
@@ -384,9 +389,10 @@ class StandaloneService {
     const violations = [];
     for (const file of files) {
       if (!/\.(js|jsx|ts|tsx|mjs|cjs|json)$/i.test(file)) continue;
-      if (isArchivedBase44Source(root, file)) continue;
+      const relative = path.relative(root, file).split(path.sep).join('/');
+      if (relative === 'scripts/verify-standalone.mjs' || isArchivedBase44Source(root, file)) continue;
       const text = await fs.readFile(file, 'utf8').catch(() => '');
-      if (/@base44\/(sdk|vite-plugin)|from\s+['"]base44['"]/.test(text)) violations.push(path.relative(root, file));
+      if (/@base44\/(sdk|vite-plugin)|from\s+['"]base44['"]/.test(text)) violations.push(relative);
     }
     const packageJson = await readJson(path.join(root, 'package.json'), {});
     for (const key of Object.keys({ ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) })) {

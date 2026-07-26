@@ -67,6 +67,83 @@ function delay(ms, signal) {
   });
 }
 
+function safeRequestUrl(input) {
+  try {
+    const url = new URL(input);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return String(input || '').split('?')[0];
+  }
+}
+
+function fetchErrorDetails(error, url, method, attempt, attempts, timedOut = false) {
+  const cause = error?.cause || {};
+  return {
+    url: safeRequestUrl(url),
+    method: String(method || 'GET').toUpperCase(),
+    attempt,
+    attempts,
+    timedOut,
+    name: error?.name || null,
+    message: error?.message || String(error),
+    code: cause.code || error?.code || null,
+    errno: cause.errno || null,
+    syscall: cause.syscall || null,
+    hostname: cause.hostname || null,
+  };
+}
+
+function isRetryableNetworkError(error) {
+  if (error instanceof BridgeError && error.code === 'BASE44_NETWORK_FAILED') return true;
+  const cause = error?.cause || {};
+  const code = String(cause.code || error?.code || '').toUpperCase();
+  if (['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET'].includes(code)) return true;
+  return (error instanceof TypeError && /fetch failed|network|socket|connect/i.test(error.message || '')) || /terminated|other side closed/i.test(error?.message || '');
+}
+
+function retryWait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new BridgeError('PROCESS_ABORTED', 'A operação foi cancelada.'));
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new BridgeError('PROCESS_ABORTED', 'A operação foi cancelada.'));
+    }, { once: true });
+  });
+}
+
+async function fetchWithRetry(url, options = {}, config = {}) {
+  const attempts = Math.max(1, Number(config.attempts || 4));
+  const timeoutMs = Math.max(1000, Number(config.timeoutMs || 120000));
+  const waits = config.waits || [1500, 3500, 7000];
+  const retryStatuses = new Set(config.retryStatuses || [429, 502, 503, 504]);
+  const fetchImpl = config.fetchImpl || fetch;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
+    try {
+      const response = await fetchImpl(url, { ...options, signal });
+      if (retryStatuses.has(response.status) && attempt < attempts) {
+        await response.body?.cancel?.().catch(() => null);
+        config.onRetry?.({ attempt, attempts, status: response.status, url: safeRequestUrl(url) });
+        await retryWait(waits[Math.min(attempt - 1, waits.length - 1)] || 7000, options.signal);
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (options.signal?.aborted) throw new BridgeError('PROCESS_ABORTED', 'A operação foi cancelada.');
+      const timedOut = timeoutSignal.aborted;
+      const details = fetchErrorDetails(error, url, options.method, attempt, attempts, timedOut);
+      lastError = new BridgeError('BASE44_NETWORK_FAILED', `Falha de comunicação com a Base44 em ${details.url}${details.code ? ` (${details.code})` : ''}.`, details);
+      if ((!isRetryableNetworkError(error) && !timedOut) || attempt >= attempts) throw lastError;
+      config.onRetry?.(details);
+      await retryWait(waits[Math.min(attempt - 1, waits.length - 1)] || 7000, options.signal);
+    }
+  }
+  throw lastError || new BridgeError('BASE44_NETWORK_FAILED', 'Não foi possível comunicar com a Base44.');
+}
+
 class Base44Service {
   constructor({ logger, emit, sessionDir, openExternal }) {
     this.logger = logger;
@@ -84,7 +161,8 @@ class Base44Service {
   }
 
   async oauthRequest(relativePath, options = {}) {
-    const response = await fetch(oauthUrl(relativePath), {
+    const target = oauthUrl(relativePath);
+    const response = await fetchWithRetry(target, {
       ...options,
       headers: {
         'User-Agent': 'RB Project Bridge',
@@ -92,6 +170,10 @@ class Base44Service {
         ...(options.headers || {}),
       },
       signal: options.signal,
+    }, {
+      attempts: 3,
+      timeoutMs: 45000,
+      onRetry: (details) => this.logger.warn('base44.oauth.retry', details),
     });
     const data = await responseJson(response);
     return { response, data };
@@ -246,20 +328,26 @@ class Base44Service {
 
   async apiFetch(relativePath, options = {}, retry = true) {
     const auth = await this.freshAuth({ signal: options.signal });
-    const { timeoutMs, signal: callerSignal, ...fetchOptions } = options;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs ?? 30 * 60 * 1000);
-    const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal;
-    const response = await fetch(new URL(relativePath, BASE_URL), {
+    const { timeoutMs, attempts, operation, signal: callerSignal, ...fetchOptions } = options;
+    const target = new URL(relativePath, BASE_URL).href;
+    const response = await fetchWithRetry(target, {
       ...fetchOptions,
-      signal,
+      signal: callerSignal,
       headers: {
         'User-Agent': 'RB Project Bridge',
         Authorization: `Bearer ${auth.accessToken}`,
         ...(options.headers ?? {}),
       },
+    }, {
+      timeoutMs: timeoutMs ?? 120000,
+      attempts: attempts ?? 4,
+      onRetry: (details) => {
+        this.logger.warn('base44.api.retry', { operation: operation || relativePath, ...details });
+        this.emit('migration:progress', { step: 'base44-export', status: 'running', message: `Conexão Base44 instável. Nova tentativa ${Math.min((details.attempt || 0) + 1, details.attempts || 4)}/${details.attempts || 4}...` });
+      },
     });
     if (response.status === 401 && retry) {
-      const renewed = await this.refreshToken(auth.refreshToken, { signal });
+      const renewed = await this.refreshToken(auth.refreshToken, { signal: callerSignal });
       await writeJson(this.getAuthPath(), {
         ...auth,
         accessToken: renewed.accessToken,
@@ -271,6 +359,7 @@ class Base44Service {
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       throw new BridgeError('BASE44_API_ERROR', `A Base44 retornou HTTP ${response.status}.`, {
+        url: safeRequestUrl(target),
         status: response.status,
         body: body.slice(0, 1000),
       });
@@ -300,32 +389,53 @@ class Base44Service {
     if (!project?.id) throw new BridgeError('PROJECT_REQUIRED', 'Selecione um projeto Base44.');
     await ensureEmptyDir(destination);
     const archivePath = path.join(destination, '.rb-bridge-export.tar');
-    this.emit('migration:progress', { step: 'base44-export', status: 'running', message: `Baixando ${project.name}...` });
-    const response = await this.apiFetch(`/api/apps/${encodeURIComponent(project.id)}/eject`, { method: 'GET', signal: options.signal });
-    if (!response.body) throw new BridgeError('BASE44_EMPTY_EXPORT', 'A Base44 retornou uma exportação vazia.');
-    const contentLength = Number(response.headers.get('content-length') || 0);
     const maxArchiveBytes = 1_000_000_000;
-    if (contentLength > maxArchiveBytes) throw new BridgeError('BASE44_EXPORT_TOO_LARGE', 'A exportação ultrapassa o limite de segurança de 1 GB.', { contentLength });
-    let received = 0;
-    const limiter = new Transform({
-      transform(chunk, _encoding, callback) {
-        received += chunk.length;
-        if (received > maxArchiveBytes) callback(new BridgeError('BASE44_EXPORT_TOO_LARGE', 'A exportação ultrapassou o limite de 1 GB durante o download.'));
-        else callback(null, chunk);
-      },
-    });
-    try {
-      await pipeline(Readable.fromWeb(response.body), limiter, fs.createWriteStream(archivePath), { signal: options.signal });
-      const tar = require('tar');
-      await tar.x({ file: archivePath, cwd: destination, preservePaths: false, strict: true });
-    } finally {
-      await fsp.rm(archivePath, { force: true }).catch(() => null);
+    const totalAttempts = 4;
+    this.emit('migration:progress', { step: 'base44-export', status: 'running', message: `Baixando ${project.name}...` });
+    for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+      await ensureEmptyDir(destination);
+      let received = 0;
+      try {
+        const response = await this.apiFetch(`/api/apps/${encodeURIComponent(project.id)}/eject`, {
+          method: 'GET',
+          signal: options.signal,
+          timeoutMs: 5 * 60 * 1000,
+          attempts: 2,
+          operation: `export:${project.id}`,
+        });
+        if (!response.body) throw new BridgeError('BASE44_EMPTY_EXPORT', 'A Base44 retornou uma exportação vazia.');
+        const contentLength = Number(response.headers.get('content-length') || 0);
+        if (contentLength > maxArchiveBytes) throw new BridgeError('BASE44_EXPORT_TOO_LARGE', 'A exportação ultrapassa o limite de segurança de 1 GB.', { contentLength });
+        const limiter = new Transform({
+          transform(chunk, _encoding, callback) {
+            received += chunk.length;
+            if (received > maxArchiveBytes) callback(new BridgeError('BASE44_EXPORT_TOO_LARGE', 'A exportação ultrapassou o limite de 1 GB durante o download.'));
+            else callback(null, chunk);
+          },
+        });
+        await pipeline(Readable.fromWeb(response.body), limiter, fs.createWriteStream(archivePath), { signal: options.signal });
+        const tar = require('tar');
+        await tar.x({ file: archivePath, cwd: destination, preservePaths: false, strict: true });
+        await fsp.rm(archivePath, { force: true });
+        const entries = await fsp.readdir(destination);
+        if (entries.length === 0) throw new BridgeError('BASE44_EMPTY_EXPORT', 'O projeto exportado não contém arquivos.');
+        this.logger.info('base44.export.complete', { projectId: project.id, destination, entries: entries.length, received, attempt });
+        this.emit('migration:progress', { step: 'base44-export', status: 'complete', message: 'Exportação Base44 concluída.' });
+        return { destination, entries: entries.length, bytes: received, source: 'base44', attempt };
+      } catch (error) {
+        await fsp.rm(archivePath, { force: true }).catch(() => null);
+        if (options.signal?.aborted || error?.code === 'PROCESS_ABORTED') throw error;
+        const retryable = isRetryableNetworkError(error) || error?.code === 'BASE44_NETWORK_FAILED';
+        const details = error?.details || fetchErrorDetails(error, `${BASE_URL}/api/apps/${project.id}/eject`, 'GET', attempt, totalAttempts);
+        this.logger.warn('base44.export.attempt.failed', { projectId: project.id, attempt, retryable, ...details });
+        if (!retryable || attempt >= totalAttempts) {
+          throw new BridgeError('BASE44_EXPORT_FAILED', `Não foi possível baixar ${project.name} após ${attempt} tentativa(s).`, { ...details, projectId: project.id, attempts: attempt });
+        }
+        this.emit('migration:progress', { step: 'base44-export', status: 'running', message: `Download interrompido. Tentando novamente (${attempt + 1}/${totalAttempts})...` });
+        await retryWait([1500, 3500, 7000][attempt - 1] || 7000, options.signal);
+      }
     }
-    const entries = await fsp.readdir(destination);
-    if (entries.length === 0) throw new BridgeError('BASE44_EMPTY_EXPORT', 'O projeto exportado não contém arquivos.');
-    this.logger.info('base44.export.complete', { projectId: project.id, destination, entries: entries.length });
-    this.emit('migration:progress', { step: 'base44-export', status: 'complete', message: 'Exportação Base44 concluída.' });
-    return { destination, entries: entries.length };
+    throw new BridgeError('BASE44_EXPORT_FAILED', `Não foi possível baixar ${project.name}.`);
   }
 }
 
@@ -335,4 +445,8 @@ module.exports = {
   AUTH_SCOPE,
   validateDeviceCode,
   validateToken,
+  safeRequestUrl,
+  fetchErrorDetails,
+  isRetryableNetworkError,
+  fetchWithRetry,
 };

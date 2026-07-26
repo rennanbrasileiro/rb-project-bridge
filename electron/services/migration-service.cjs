@@ -3,7 +3,7 @@
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { BridgeError, asBridgeError } = require('../core/errors.cjs');
-const { ensureEmptyDir, copyDirectory, safeSlug, readJson } = require('../core/fs-utils.cjs');
+const { ensureEmptyDir, copyDirectory, safeSlug, readJson, writeJson } = require('../core/fs-utils.cjs');
 
 class MigrationService {
   constructor({ base44, github, security, build, standalone, archive, reports, logger, emit }) {
@@ -19,13 +19,36 @@ class MigrationService {
     const jobId = crypto.randomUUID(); const startedAt = new Date().toISOString(); const slug = safeSlug(input.project.name); const timestamp = startedAt.replace(/[:.]/g, '-');
     const jobRoot = path.join(input.outputDirectory, `${slug}-${timestamp}`); const originalDir = path.join(jobRoot, 'source-backup'); const snapshotDir = path.join(jobRoot, 'base44-snapshot'); const repositoryDir = path.join(jobRoot, 'repository'); const previewDir = path.join(jobRoot, 'preview'); const backupPath = path.join(jobRoot, `${slug}-base44-source.zip`);
     const standaloneMode = input.deliveryMode ? input.deliveryMode !== 'snapshot' : Boolean(this.standalone);
-    const report = { schemaVersion: 2, jobId, status: 'running', startedAt, project: { id: input.project.id, name: input.project.name }, options: { deliveryMode: standaloneMode ? 'standalone-supabase' : 'snapshot', buildValidation: standaloneMode ? true : Boolean(input.buildValidation), visibility: 'private', repositoryStrategy: 'reuse-or-create', commitMessage: input.repository.commitMessage || '' }, notes: [] };
+    const report = { schemaVersion: 2, jobId, status: 'running', startedAt, project: { id: input.project.id, name: input.project.name, updatedAt: input.project.updatedAt || null }, options: { deliveryMode: standaloneMode ? 'standalone-supabase' : 'snapshot', buildValidation: standaloneMode ? true : Boolean(input.buildValidation), visibility: 'private', repositoryStrategy: 'reuse-or-create', commitMessage: input.repository.commitMessage || '' }, notes: [] };
     await ensureEmptyDir(jobRoot); this.logger.info('migration.start', { jobId, projectId: input.project.id, jobRoot, standaloneMode }); this.emit('migration:progress', { step: 'job', status: 'running', message: `Operação ${jobId.slice(0, 8)} iniciada.` });
     try {
-      report.export = await this.base44.exportProject(input.project, originalDir, { signal }); this.assertActive(signal);
+      try {
+        report.export = await this.base44.exportProject(input.project, originalDir, { signal });
+      } catch (error) {
+        if (!['BASE44_EXPORT_FAILED', 'BASE44_NETWORK_FAILED'].includes(error?.code)) throw error;
+        this.emit('migration:progress', { step: 'base44-export', status: 'running', message: 'Base44 indisponível. Procurando o último snapshot válido no GitHub...' });
+        const fallback = await this.github.cloneBase44Source({ owner: input.repository.owner, name: input.repository.name, destination: originalDir }, { signal });
+        if (!fallback) throw error;
+        report.export = fallback;
+        report.notes.push(`A Base44 não respondeu durante esta execução. Foi usado o snapshot ${fallback.repository}:${fallback.branch}@${fallback.sha.slice(0, 7)}.`);
+      }
+      this.assertActive(signal);
       report.exportTree = await this.security.validateExportTree(originalDir, {}, signal); if (!report.exportTree.valid) throw new BridgeError('UNSAFE_EXPORT_TREE', 'A exportação contém links simbólicos ou arquivos não suportados.', { prohibited: report.exportTree.prohibited });
       report.backup = await this.archive.createZip(originalDir, backupPath); this.assertActive(signal);
       await copyDirectory(originalDir, snapshotDir); report.snapshotSanitization = await this.security.sanitize(snapshotDir, signal); report.sanitization = report.snapshotSanitization; report.snapshotSecurity = await this.security.scan(snapshotDir, signal); if (report.snapshotSecurity.blocking.length) throw new BridgeError('SECURITY_SCAN_BLOCKED', 'O snapshot contém possíveis segredos.', { findings: report.snapshotSecurity.blocking });
+      report.sourceManifest = {
+        schemaVersion: 1,
+        projectId: input.project.id,
+        projectName: input.project.name,
+        base44UpdatedAt: input.project.updatedAt || null,
+        exportedAt: new Date().toISOString(),
+        deliveredAt: null,
+        source: report.export.source || 'base44',
+        fallbackRepository: report.export.repository || null,
+        fallbackBranch: report.export.branch || null,
+        fallbackSha: report.export.sha || null,
+      };
+      await writeJson(path.join(snapshotDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
       await copyDirectory(snapshotDir, repositoryDir);
       report.base44Analysis = await this.security.analyzeBase44Dependencies(repositoryDir, signal);
       if (standaloneMode) report.standalone = await this.standalone.transform(repositoryDir, { projectName: input.project.name, signal });
@@ -38,6 +61,10 @@ class MigrationService {
       report.paths = { jobRoot, originalDir, snapshotDir, repositoryDir, previewDir: report.build.preview?.directory || null, backupPath };
       const prePublishReport = { ...report, status: 'ready-to-publish', finishedAt: new Date().toISOString() }; await this.reports.writeReport(repositoryDir, prePublishReport); this.assertActive(signal);
 
+      report.sourceStatusBeforePublish = await this.github.inspectSourceStatus({ owner: input.repository.owner, name: input.repository.name, project: input.project }).catch(() => null);
+      report.sourceManifest.deliveredAt = new Date().toISOString();
+      await writeJson(path.join(snapshotDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
+      await writeJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
       const resolved = await this.github.resolveRepository({ ...input.repository, visibility: 'private' }, { signal });
       const repository = resolved.repository;
       const defaultBranch = repository.default_branch || 'main';
@@ -49,7 +76,22 @@ class MigrationService {
         report.previousSnapshotBranch = await this.github.preserveBranch(repository, 'base44-source', { prefix: 'base44-source-before-refresh', signal });
         if (!report.previousDefaultBranch) throw new BridgeError('REPOSITORY_BACKUP_FAILED', `Não foi possível preservar a branch ${defaultBranch} antes da atualização.`);
         report.snapshot = await this.github.publish({ directory: snapshotDir, repository, commitMessage: 'Snapshot sanitizado da exportação Base44', signal, branch: 'base44-source', force: true });
-        report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: standaloneMode ? 'Entrega independente Supabase gerada pelo RB Project Bridge' : (input.repository.commitMessage || `Snapshot ${input.project.name}`), signal, branch: defaultBranch, force: true });
+        const repositoryEvolved = ['github-newer', 'both-changed'].includes(report.sourceStatusBeforePublish?.status);
+        if (repositoryEvolved && standaloneMode) {
+          const reviewBranch = `bridge/base44-refresh-${timestamp}`;
+          report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: 'Atualização Base44 convertida para Supabase — revisão necessária', signal, branch: reviewBranch });
+          report.pullRequest = await this.github.createPullRequest(repository, {
+            head: reviewBranch,
+            base: defaultBranch,
+            title: `Revisar atualização Base44 — ${input.project.name}`,
+            body: `O RB Project Bridge detectou alterações posteriores no GitHub e não substituiu a branch ${defaultBranch}.\n\n- Base44 atualizada: ${input.project.updatedAt || 'data indisponível'}\n- Último commit GitHub: ${report.sourceStatusBeforePublish.latestCommitAt || 'data indisponível'}\n- Backup criado: ${report.previousDefaultBranch?.backupBranch || 'não informado'}\n\nRevise e faça o merge somente após validar o preview local.`,
+          }, { signal });
+          report.deliveryStrategy = 'pull-request';
+          report.github.url = report.pullRequest.url;
+        } else {
+          report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: standaloneMode ? 'Entrega independente Supabase gerada pelo RB Project Bridge' : (input.repository.commitMessage || `Snapshot ${input.project.name}`), signal, branch: defaultBranch, force: true });
+          report.deliveryStrategy = 'direct-main';
+        }
       } else {
         report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: standaloneMode ? 'Entrega independente Supabase gerada pelo RB Project Bridge' : (input.repository.commitMessage || `Snapshot ${input.project.name}`), signal, branch: defaultBranch });
         report.snapshot = await this.github.publish({ directory: snapshotDir, repository, commitMessage: 'Snapshot sanitizado da exportação Base44', signal, branch: 'base44-source' });
@@ -57,7 +99,7 @@ class MigrationService {
 
       report.status = 'completed'; report.finishedAt = new Date().toISOString(); report.reportFiles = await this.reports.writeReport(repositoryDir, report); await this.reports.writeReport(jobRoot, report);
       await this.reports.appendHistory({ jobId, status: report.status, startedAt, finishedAt: report.finishedAt, project: report.project, github: report.github, jobRoot, previewDir: report.paths.previewDir });
-      this.emit('migration:progress', { step: 'job', status: 'complete', message: resolved.reused ? `Entrega independente concluída no repositório existente ${repository.full_name}; histórico preservado.` : (standaloneMode ? 'Entrega independente concluída: Supabase, build local, preview e GitHub privado.' : 'Snapshot concluído.') });
+      this.emit('migration:progress', { step: 'job', status: 'complete', message: report.deliveryStrategy === 'pull-request' ? `Atualização preparada no PR #${report.pullRequest.number}; a branch principal não foi sobrescrita.` : resolved.reused ? `Entrega independente concluída no repositório existente ${repository.full_name}; histórico preservado.` : (standaloneMode ? 'Entrega independente concluída: Supabase, build local, preview e GitHub privado.' : 'Snapshot concluído.') });
       return report;
     } catch (error) {
       let bridgeError = asBridgeError(error, 'MIGRATION_FAILED'); if (signal.aborted || bridgeError.code === 'PROCESS_ABORTED') bridgeError = new BridgeError('MIGRATION_CANCELLED', 'A operação foi cancelada.');

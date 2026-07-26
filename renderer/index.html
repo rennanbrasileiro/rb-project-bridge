@@ -43,8 +43,10 @@
 
     <section class="card">
       <h2>4. Repositório GitHub privado</h2>
-      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Nome do repositório<input id="repoName" placeholder="meu-produto"></label></div>
-      <label>Descrição<input id="description" placeholder="Aplicação independente preparada pelo RB Project Bridge"></label>
+      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Destino<select id="repoChoice"><option value="">Conecte o GitHub para carregar</option></select></label></div>
+       <label id="newRepoLabel" class="hidden">Nome do novo repositório<input id="repoName" placeholder="meu-produto"></label>
+       <div id="repoSyncStatus" class="private-lock"><strong>Seleção inteligente</strong><span>Escolha um repositório existente ou selecione “Criar novo”. O Bridge não criará outro repositório por erro de digitação.</span></div>
+       <label>Descrição<input id="description" placeholder="Aplicação independente preparada pelo RB Project Bridge"></label>
       <div class="private-lock"><strong>🔒 Reutilização segura</strong><span>Se o repositório já existir, ele será tornado privado, o estado atual será preservado em branches datadas e o conteúdo independente substituirá apenas a branch principal. Nenhuma branch será excluída.</span></div>
       <label><input type="checkbox" id="authorization"> Tenho autorização do proprietário para atualizar este repositório</label>
     </section>
