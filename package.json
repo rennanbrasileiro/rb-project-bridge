@@ -1,71 +1,33 @@
 {
   "name": "rb-project-bridge",
-  "version": "0.3.0",
-  "description": "Desktop pipeline to preserve Base44 projects, build executable sandboxes, prepare local Supabase workspaces, assess migration readiness and safely update private GitHub repositories.",
+  "version": "0.4.0",
+  "description": "Desktop migration product for preserving Base44 applications, generating independent sandboxes and workspaces, assessing production readiness, and packaging a verifiable client handoff.",
   "main": "electron/main.cjs",
   "author": "RB HUB",
   "license": "UNLICENSED",
   "private": true,
-  "engines": {
-    "node": ">=20.19.0"
-  },
+  "engines": { "node": ">=20.19.0" },
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/services/github-service.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/report-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && npm test",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs && node --check electron/services/github-service.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js && npm test",
     "dist:win": "electron-builder --win portable nsis",
     "dist:linux": "electron-builder --linux AppImage",
     "dist:dir": "electron-builder --dir"
   },
-  "dependencies": {
-    "adm-zip": "0.5.16",
-    "tar": "7.5.4",
-    "npm": "11.4.2"
-  },
-  "devDependencies": {
-    "electron": "43.2.0",
-    "electron-builder": "26.15.3"
-  },
+  "dependencies": { "adm-zip": "0.5.16", "tar": "7.5.4", "npm": "11.4.2" },
+  "devDependencies": { "electron": "43.2.0", "electron-builder": "26.15.3" },
   "build": {
     "appId": "br.com.rbhub.projectbridge",
     "productName": "RB Project Bridge",
     "asar": true,
-    "asarUnpack": [
-      "node_modules/npm/**"
-    ],
-    "files": [
-      "electron/**/*",
-      "renderer/**/*",
-      "assets/**/*",
-      "package.json",
-      "LICENSE",
-      "THIRD_PARTY_NOTICES.md"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": [
-        "portable",
-        "nsis"
-      ],
-      "icon": "assets/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "artifactName": "RB-Project-Bridge-Setup-${version}-${arch}.${ext}"
-    },
-    "portable": {
-      "artifactName": "RB-Project-Bridge-Portable-${version}-${arch}.${ext}"
-    },
-    "linux": {
-      "target": "AppImage",
-      "category": "Development",
-      "icon": "assets/icon.png"
-    }
+    "asarUnpack": ["node_modules/npm/**"],
+    "files": ["electron/**/*", "renderer/**/*", "assets/**/*", "package.json", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+    "directories": { "output": "release" },
+    "win": { "target": ["portable", "nsis"], "icon": "assets/icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "artifactName": "RB-Project-Bridge-Setup-${version}-${arch}.${ext}" },
+    "portable": { "artifactName": "RB-Project-Bridge-Portable-${version}-${arch}.${ext}" },
+    "linux": { "target": "AppImage", "category": "Development", "icon": "assets/icon.png" }
   }
 }
