@@ -32,9 +32,17 @@ function createServices() {
   const base44 = new Base44Service({ ...common, sessionDir: path.join(sessionRoot, 'base44'), openExternal });
   const github = new GitHubService({ ...common, toolchain, sessionDir: path.join(sessionRoot, 'github'), openExternal });
   const security = new SecurityService(common);
-  const build = new BuildService(common);
+  const preview = new PreviewService({
+    logger,
+    emit,
+    openExternal,
+    createBrowserWindow: (options) => new BrowserWindow(options),
+  });
+  const build = new BuildService({
+    ...common,
+    runtimeValidator: (directory, options) => preview.validateRuntime(directory, options),
+  });
   const standalone = new StandaloneService(common);
-  const preview = new PreviewService({ logger, openExternal });
   const archive = new ArchiveService({ emit });
   const reports = new ReportService({ userDataDir, logger });
   const migration = new MigrationService({ base44, github, security, build, standalone, archive, reports, logger, emit });
