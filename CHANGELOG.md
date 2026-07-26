@@ -1,13 +1,21 @@
 # Changelog
 
-## 0.1.3 — Execução Base44 corrigida de ponta a ponta
+## 0.1.4 — Argumentos Base44 normalizados no Portable
+
+- Adicionado um adaptador entre o `utilityProcess` e a CLI Base44.
+- O adaptador reconstrói `process.argv` no formato padrão do Node antes de importar `base44/bin/run.js`.
+- Eliminado o caminho duplicado do módulo que era interpretado pela Base44 como comando desconhecido.
+- O smoke test agora abre também o executável Portable final, reproduzindo a extração em `%TEMP%` usada no computador do usuário.
+- Suíte ampliada para 24 testes automatizados.
+
+## 0.1.3 — Execução Base44 parcialmente corrigida
 
 - Substituída a tentativa de executar a CLI pelo próprio `.exe` do aplicativo por `utilityProcess.fork` do Electron.
-- O caminho físico da CLI continua sendo resolvido em `app.asar.unpacked`, mas agora é passado como módulo, separado dos argumentos `login`, `whoami` e `logout`.
-- Adicionado smoke test que abre o executável Windows empacotado e executa `base44 login --help` pelo mesmo fluxo usado em produção.
+- O caminho físico da CLI passou a ser resolvido em `app.asar.unpacked`.
+- Adicionado smoke test inicial no diretório `win-unpacked`.
 - Código temporário do GitHub exibido em painel próprio, com ações para copiar e reabrir a autorização.
 - Lista de projetos e contas passou a ser montada com elementos DOM, sem interpolação de HTML.
-- Suíte ampliada para 23 testes automatizados.
+- Limitação identificada após teste no Portable: o vetor `process.argv` ainda continha o caminho do módulo duplicado.
 
 ## 0.1.2 — Autenticação parcialmente corrigida
 

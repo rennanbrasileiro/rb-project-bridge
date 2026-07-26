@@ -6,6 +6,7 @@ const {BridgeError,asBridgeError}=require('../electron/core/errors.cjs');
 const {SecurityService}=require('../electron/services/security-service.cjs');
 const {resolvePackagedCliPath,extractHttpsUrls,runUtilityModule}=require('../electron/services/base44-service.cjs');
 const {extractGitHubDeviceCode}=require('../electron/services/github-service.cjs');
+const {ARGUMENT_MARKER,extractCliArguments}=require('../electron/workers/base44-cli-runner.cjs');
 const service=()=>new SecurityService({logger:{info(){}},emit(){}});
 test('01 slug removes accents',()=>assert.equal(safeSlug('Ágil Hub — Projeto 2026'),'agil-hub-projeto-2026'));
 test('02 slug fallback',()=>assert.equal(safeSlug('***','fallback'),'fallback'));
@@ -30,3 +31,4 @@ test('20 packaged Base44 CLI uses app.asar.unpacked',()=>assert.equal(resolvePac
 test('21 extracts Base44 authorization URLs',()=>assert.deepEqual(extractHttpsUrls('Open https://app.base44.com/login/device now'),['https://app.base44.com/login/device']));
 test('22 extracts GitHub device code',()=>assert.equal(extractGitHubDeviceCode('First copy your one-time code: 6348-9E4A'),'6348-9E4A'));
 test('23 utility process receives module path separately from CLI arguments',async()=>{let call;const utilityProcess={fork(modulePath,args,options){call={modulePath,args,options};const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>true;process.nextTick(()=>{child.stdout.write('ok');child.stdout.end();child.emit('exit',0);});return child;}};const result=await runUtilityModule('C:\\base44\\bin\\run.js',['login'],{utilityProcess,timeoutMs:1000});assert.equal(call.modulePath,'C:\\base44\\bin\\run.js');assert.deepEqual(call.args,['login']);assert.equal(call.options.stdio[0],'ignore');assert.equal(result.stdout,'ok');});
+test('24 Base44 wrapper removes duplicated portable executable arguments',()=>{const argv=['RB Project Bridge.exe','runner.cjs','runner.cjs',ARGUMENT_MARKER,'login'];assert.deepEqual(extractCliArguments(argv),['login']);});
