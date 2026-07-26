@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess } = require('electron');
 const { JsonLogger } = require('./core/logger.cjs');
 const { BridgeError, asBridgeError } = require('./core/errors.cjs');
 const { safeSlug } = require('./core/fs-utils.cjs');
@@ -16,9 +16,14 @@ const { MigrationService } = require('./services/migration-service.cjs');
 
 let mainWindow;
 let services;
+const base44SmokeMode = process.argv.includes('--smoke-base44-cli');
 
 function emit(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+function openExternal(url) {
+  return shell.openExternal(url);
 }
 
 function createServices() {
@@ -27,8 +32,18 @@ function createServices() {
   const common = { logger, emit };
   const sessionRoot = path.join(userDataDir, 'sessions');
   const toolchain = new ToolchainService({ ...common, toolsDir: path.join(userDataDir, 'tools') });
-  const base44 = new Base44Service({ ...common, sessionDir: path.join(sessionRoot, 'base44') });
-  const github = new GitHubService({ ...common, toolchain, sessionDir: path.join(sessionRoot, 'github') });
+  const base44 = new Base44Service({
+    ...common,
+    sessionDir: path.join(sessionRoot, 'base44'),
+    openExternal,
+    utilityProcess,
+  });
+  const github = new GitHubService({
+    ...common,
+    toolchain,
+    sessionDir: path.join(sessionRoot, 'github'),
+    openExternal,
+  });
   const security = new SecurityService(common);
   const build = new BuildService(common);
   const archive = new ArchiveService({ emit });
@@ -144,12 +159,31 @@ function createWindow() {
   });
 }
 
+async function runBase44Smoke() {
+  services = createServices();
+  try {
+    await services.base44.runCli(['login', '--help'], {
+      timeoutMs: 60_000,
+      onOutput: ({ stream, text }) => {
+        if (stream === 'stderr') process.stderr.write(text);
+        else process.stdout.write(text);
+      },
+    });
+    process.stdout.write('Packaged Base44 utility-process smoke test passed.\n');
+    app.exit(0);
+  } catch (error) {
+    process.stderr.write(`${error.stack || error.message}\n`);
+    app.exit(1);
+  }
+}
+
 app.whenReady().then(() => {
+  if (base44SmokeMode) return runBase44Smoke();
   services = createServices();
   registerIpc();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { if (!base44SmokeMode && process.platform !== 'darwin') app.quit(); });
 process.on('uncaughtException', (error) => services?.logger?.error('process.uncaughtException', { message: error.message, stack: error.stack }));
 process.on('unhandledRejection', (error) => services?.logger?.error('process.unhandledRejection', { message: error instanceof Error ? error.message : String(error) }));
