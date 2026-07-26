@@ -59,11 +59,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish 0.2.1 RC1 release
-        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v0.2.1-rc1
-          target_commitish: ${{ github.sha }}
+          target_commitish: main
           name: RB Project Bridge 0.2.1 RC1
           prerelease: true
           generate_release_notes: true
