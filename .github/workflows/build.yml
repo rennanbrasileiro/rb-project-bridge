@@ -21,8 +21,12 @@ jobs:
       - run: npm install --no-audit --no-fund --loglevel=error
       - name: Validate syntax
         run: node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js
-      - name: Validate preview repair
-        run: node --test tests/preview-repair.test.cjs
+      - name: Rebuild completed preview
+        run: node --test --test-name-pattern="rebuilds and runtime-validates" tests/preview-repair.test.cjs
+      - name: Reject unsafe repair path
+        run: node --test --test-name-pattern="blocks report paths" tests/preview-repair.test.cjs
+      - name: Validate repair interface contract
+        run: node --test --test-name-pattern="renderer exposes" tests/preview-repair.test.cjs
       - name: Run complete suite
         run: npm test
 
