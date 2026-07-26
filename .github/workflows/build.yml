@@ -33,19 +33,35 @@ jobs:
       - run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Verify Base44 runner in unpacked and portable applications
+      - name: Verify direct Base44 OAuth in unpacked and portable applications
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
           $executables = @(
             (Resolve-Path 'release/win-unpacked/RB Project Bridge.exe'),
-            (Resolve-Path 'release/RB-Project-Bridge-Portable-0.1.4-x64.exe')
+            (Resolve-Path 'release/RB-Project-Bridge-Portable-0.1.5-x64.exe')
           )
+          $index = 0
           foreach ($exe in $executables) {
-            Write-Host "Testing $exe"
-            $process = Start-Process -FilePath $exe -ArgumentList '--smoke-base44-cli' -Wait -PassThru
+            $index += 1
+            $marker = Join-Path $env:RUNNER_TEMP "rb-base44-oauth-$index.json"
+            Remove-Item $marker -Force -ErrorAction SilentlyContinue
+            $env:RB_BRIDGE_SMOKE_MARKER = $marker
+            Write-Host "Testing real Base44 OAuth request through $exe"
+            $process = Start-Process -FilePath $exe -Wait -PassThru
             if ($process.ExitCode -ne 0) {
-              throw "Base44 smoke test failed for $exe with exit code $($process.ExitCode)."
+              throw "Base44 OAuth smoke failed for $exe with exit code $($process.ExitCode)."
+            }
+            if (-not (Test-Path $marker)) {
+              throw "The packaged application did not create the OAuth proof marker for $exe."
+            }
+            $proof = Get-Content $marker -Raw | ConvertFrom-Json
+            if (-not $proof.ok) {
+              throw "Base44 OAuth proof reported failure for $exe: $($proof.error)"
+            }
+            if (-not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') {
+              throw "The packaged application did not receive a valid Base44 device-code response for $exe."
             }
           }
       - name: Generate SHA-256 checksums
@@ -57,21 +73,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.1.4
+          name: rb-project-bridge-windows-0.1.5
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.1.4 RC1 release
+      - name: Publish 0.1.5 RC1 release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.1.4-rc1
+          tag_name: v0.1.5-rc1
           target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.1.4 RC1
+          name: RB Project Bridge 0.1.5 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.1.4-x64.exe
-            release/RB-Project-Bridge-Portable-0.1.4-x64.exe
+            release/RB-Project-Bridge-Setup-0.1.5-x64.exe
+            release/RB-Project-Bridge-Portable-0.1.5-x64.exe
             release/SHA256SUMS.txt
