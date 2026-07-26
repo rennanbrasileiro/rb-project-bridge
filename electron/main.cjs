@@ -45,7 +45,7 @@ function createServices() {
 }
 
 function serializeError(error) { const normalized = asBridgeError(error); return { name: normalized.name, code: normalized.code, message: normalized.message, details: normalized.details }; }
-function handle(channel, action) { ipcMain.handle(channel, async (_event, ...args) => { try { return { ok: true, data: await action(...args) }; } catch (error) { services?.logger?.error('ipc.error', { channel, error: serializeError(error) }); return { ok: false, error: serializeErrorError ? serializeError(error) : serializeError(error) }; } }); }
+function handle(channel, action) { ipcMain.handle(channel, async (_event, ...args) => { try { return { ok: true, data: await action(...args) }; } catch (error) { services?.logger?.error('ipc.error', { channel, error: serializeError(error) }); return { ok: false, error: serializeError(error) }; } }); }
 
 function validateMigrationInput(input) {
   if (!input || typeof input !== 'object') throw new BridgeError('INVALID_INPUT', 'Os dados da operação são obrigatórios.');
