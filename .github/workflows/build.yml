@@ -22,24 +22,25 @@ jobs:
         with:
           python-version: '3.12'
       - name: Apply resilience and repository intelligence patch
-        id: apply
         shell: bash
         run: |
-          if grep -q 'async listRepositories(owner' electron/services/github-service.cjs && grep -q '"version": "0.2.3"' package.json; then
-            echo 'Patch already applied.' | tee patch.log
-          else
+          : > patch.log
+          if ! grep -q 'async listRepositories(owner' electron/services/github-service.cjs; then
             python scripts/fix-0.2.3-patcher.py
             sed -i "s#Path('.github/workflows/release.yml')#Path('.github/workflows/build.yml')#" scripts/apply-0.2.3-resilience.py
-            set +e
-            python scripts/apply-0.2.3-resilience.py >patch.log 2>&1
-            status=$?
-            set -e
-            cat patch.log
-            if [ $status -ne 0 ]; then exit $status; fi
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add electron renderer tests package.json .github/workflows/build.yml
-            git commit -m 'Add resilient Base44 export and safe repository selection'
+            python scripts/apply-0.2.3-resilience.py >>patch.log 2>&1
+          fi
+          if ! grep -q 'async createPullRequest(repository' electron/services/github-service.cjs; then
+            python scripts/apply-0.2.3-safety.py >>patch.log 2>&1
+          fi
+          cat patch.log
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add electron renderer tests package.json .github/workflows/build.yml
+          if git diff --cached --quiet; then
+            echo 'Product patch already applied.'
+          else
+            git commit -m 'Finalize resilient Base44 and repository synchronization flow'
             git push origin HEAD:agent/fix-base44-export-network
           fi
       - name: Upload patch diagnostics
@@ -65,8 +66,41 @@ jobs:
       - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run check
 
-  windows:
+  fithub:
     needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-base44-export-network
+          path: bridge
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Bridge dependencies
+        working-directory: bridge
+        run: npm install --no-audit --no-fund --loglevel=error
+      - name: Clone existing FitHub repository source
+        run: git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
+      - name: Convert, audit and build FitHub from existing repository
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
+          const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
+          service.transform('fithub', { projectName: 'FitHub Personal Trainer' }).then((result) => {
+            if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
+            console.log(`Entities converted: ${result.entities.length}`);
+          }).catch((error) => { console.error(error); process.exit(1); });
+          NODE
+          cd fithub
+          npm install --no-audit --no-fund --loglevel=error
+          npm run check:standalone
+          npm run build:demo
+          test -f dist/index.html
+
+  windows:
+    needs: [validate, fithub]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
