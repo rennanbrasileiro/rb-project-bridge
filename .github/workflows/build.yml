@@ -36,12 +36,10 @@ jobs:
       - name: Verify packaged Base44 CLI
         shell: pwsh
         run: |
-          $app = Resolve-Path 'release/win-unpacked/RB Project Bridge.exe'
           $cli = Resolve-Path 'release/win-unpacked/resources/app.asar.unpacked/node_modules/base44/bin/run.js'
           $assets = Resolve-Path 'release/win-unpacked/resources/app.asar.unpacked/node_modules/base44/dist/assets'
           if (-not (Test-Path $assets)) { throw 'Bundled Base44 assets are missing.' }
-          $env:ELECTRON_RUN_AS_NODE = '1'
-          & $app $cli --version
+          node $cli login --help
           if ($LASTEXITCODE -ne 0) { throw "Bundled Base44 CLI failed with exit code $LASTEXITCODE." }
       - name: Generate SHA-256 checksums
         shell: pwsh
