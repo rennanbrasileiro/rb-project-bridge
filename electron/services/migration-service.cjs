@@ -76,7 +76,22 @@ class MigrationService {
         report.previousSnapshotBranch = await this.github.preserveBranch(repository, 'base44-source', { prefix: 'base44-source-before-refresh', signal });
         if (!report.previousDefaultBranch) throw new BridgeError('REPOSITORY_BACKUP_FAILED', `Não foi possível preservar a branch ${defaultBranch} antes da atualização.`);
         report.snapshot = await this.github.publish({ directory: snapshotDir, repository, commitMessage: 'Snapshot sanitizado da exportação Base44', signal, branch: 'base44-source', force: true });
-        report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: standaloneMode ? 'Entrega independente Supabase gerada pelo RB Project Bridge' : (input.repository.commitMessage || `Snapshot ${input.project.name}`), signal, branch: defaultBranch, force: true });
+        const repositoryEvolved = ['github-newer', 'both-changed'].includes(report.sourceStatusBeforePublish?.status);
+        if (repositoryEvolved && standaloneMode) {
+          const reviewBranch = `bridge/base44-refresh-${timestamp}`;
+          report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: 'Atualização Base44 convertida para Supabase — revisão necessária', signal, branch: reviewBranch });
+          report.pullRequest = await this.github.createPullRequest(repository, {
+            head: reviewBranch,
+            base: defaultBranch,
+            title: `Revisar atualização Base44 — ${input.project.name}`,
+            body: `O RB Project Bridge detectou alterações posteriores no GitHub e não substituiu a branch ${defaultBranch}.\n\n- Base44 atualizada: ${input.project.updatedAt || 'data indisponível'}\n- Último commit GitHub: ${report.sourceStatusBeforePublish.latestCommitAt || 'data indisponível'}\n- Backup criado: ${report.previousDefaultBranch?.backupBranch || 'não informado'}\n\nRevise e faça o merge somente após validar o preview local.`,
+          }, { signal });
+          report.deliveryStrategy = 'pull-request';
+          report.github.url = report.pullRequest.url;
+        } else {
+          report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: standaloneMode ? 'Entrega independente Supabase gerada pelo RB Project Bridge' : (input.repository.commitMessage || `Snapshot ${input.project.name}`), signal, branch: defaultBranch, force: true });
+          report.deliveryStrategy = 'direct-main';
+        }
       } else {
         report.github = await this.github.publish({ directory: repositoryDir, repository, commitMessage: standaloneMode ? 'Entrega independente Supabase gerada pelo RB Project Bridge' : (input.repository.commitMessage || `Snapshot ${input.project.name}`), signal, branch: defaultBranch });
         report.snapshot = await this.github.publish({ directory: snapshotDir, repository, commitMessage: 'Snapshot sanitizado da exportação Base44', signal, branch: 'base44-source' });
@@ -84,7 +99,7 @@ class MigrationService {
 
       report.status = 'completed'; report.finishedAt = new Date().toISOString(); report.reportFiles = await this.reports.writeReport(repositoryDir, report); await this.reports.writeReport(jobRoot, report);
       await this.reports.appendHistory({ jobId, status: report.status, startedAt, finishedAt: report.finishedAt, project: report.project, github: report.github, jobRoot, previewDir: report.paths.previewDir });
-      this.emit('migration:progress', { step: 'job', status: 'complete', message: resolved.reused ? `Entrega independente concluída no repositório existente ${repository.full_name}; histórico preservado.` : (standaloneMode ? 'Entrega independente concluída: Supabase, build local, preview e GitHub privado.' : 'Snapshot concluído.') });
+      this.emit('migration:progress', { step: 'job', status: 'complete', message: report.deliveryStrategy === 'pull-request' ? `Atualização preparada no PR #${report.pullRequest.number}; a branch principal não foi sobrescrita.` : resolved.reused ? `Entrega independente concluída no repositório existente ${repository.full_name}; histórico preservado.` : (standaloneMode ? 'Entrega independente concluída: Supabase, build local, preview e GitHub privado.' : 'Snapshot concluído.') });
       return report;
     } catch (error) {
       let bridgeError = asBridgeError(error, 'MIGRATION_FAILED'); if (signal.aborted || bridgeError.code === 'PROCESS_ABORTED') bridgeError = new BridgeError('MIGRATION_CANCELLED', 'A operação foi cancelada.');

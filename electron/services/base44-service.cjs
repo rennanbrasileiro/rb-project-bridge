@@ -393,6 +393,7 @@ class Base44Service {
     const totalAttempts = 4;
     this.emit('migration:progress', { step: 'base44-export', status: 'running', message: `Baixando ${project.name}...` });
     for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+      await ensureEmptyDir(destination);
       let received = 0;
       try {
         const response = await this.apiFetch(`/api/apps/${encodeURIComponent(project.id)}/eject`, {
@@ -415,6 +416,7 @@ class Base44Service {
         await pipeline(Readable.fromWeb(response.body), limiter, fs.createWriteStream(archivePath), { signal: options.signal });
         const tar = require('tar');
         await tar.x({ file: archivePath, cwd: destination, preservePaths: false, strict: true });
+        await fsp.rm(archivePath, { force: true });
         const entries = await fsp.readdir(destination);
         if (entries.length === 0) throw new BridgeError('BASE44_EMPTY_EXPORT', 'O projeto exportado não contém arquivos.');
         this.logger.info('base44.export.complete', { projectId: project.id, destination, entries: entries.length, received, attempt });

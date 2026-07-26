@@ -148,6 +148,13 @@ class GitHubService {
     }
     return { repository: await this.createRepository(input, options), reused: false };
   }
+  async createPullRequest(repository, { head, base, title, body }, options = {}) {
+    const args = ['api', '-X', 'POST', `repos/${repository.full_name}/pulls`, '-f', `head=${head}`, '-f', `base=${base}`, '-f', `title=${title}`, '-f', `body=${body || ''}`];
+    const pull = this.parseJson((await this.runGh(args, { timeoutMs: 60_000, signal: options.signal })).stdout);
+    if (!pull?.html_url) throw new BridgeError('PULL_REQUEST_CREATE_FAILED', `Não foi possível abrir a revisão em ${repository.full_name}.`);
+    this.emit('migration:progress', { step: 'github-publish', status: 'complete', message: `Atualização publicada para revisão no PR #${pull.number}.` });
+    return { number: pull.number, url: pull.html_url, head, base };
+  }
   async getBranchRef(repository, branch, options = {}) {
     try {
       const encoded = encodeURIComponent(branch);

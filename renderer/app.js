@@ -39,8 +39,17 @@ async function loadRepositories() {
     for (const repository of repositories) { const option = document.createElement('option'); option.value = repository.name; option.textContent = `${repository.name}${repository.private ? ' 🔒' : ' 🌐'}`; choice.appendChild(option); }
     const create = document.createElement('option'); create.value = '__new__'; create.textContent = '＋ Criar novo repositório privado'; choice.appendChild(create);
     const suggested = slug(project?.dataset.name || '');
-    const exact = repositories.find((repository) => repository.name.toLowerCase() === suggested.toLowerCase());
-    if (exact) choice.value = exact.name; else { choice.value = '__new__'; $('repoName').value = suggested; }
+    const compactProject = suggested.replace(/[^a-z0-9]/g, '');
+    const ranked = repositories.map((repository) => {
+      const candidate = repository.name.toLowerCase();
+      const compactCandidate = candidate.replace(/[^a-z0-9]/g, '');
+      let score = candidate === suggested ? 100 : compactCandidate === compactProject ? 95 : 0;
+      if (!score && compactCandidate.length >= 4 && (compactProject.startsWith(compactCandidate) || compactProject.includes(compactCandidate))) score = 80 + Math.min(compactCandidate.length, 15);
+      if (!score && compactProject.length >= 4 && compactCandidate.startsWith(compactProject)) score = 75;
+      return { repository, score };
+    }).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score);
+    const best = ranked[0] && (!ranked[1] || ranked[0].score > ranked[1].score) ? ranked[0].repository : null;
+    if (best) choice.value = best.name; else { choice.value = '__new__'; $('repoName').value = suggested; }
     await inspectRepositorySelection();
   } catch (error) { choice.replaceChildren(); const option = document.createElement('option'); option.value = ''; option.textContent = 'Erro ao carregar repositórios'; choice.appendChild(option); log(`ERRO GitHub: ${error.message}`); }
 }
@@ -66,7 +75,7 @@ $('start').onclick = async () => {
     lastResult = await call(window.rbBridge.migration.start(input));
     const reused = lastResult.githubRepository?.reused;
     const backup = lastResult.previousDefaultBranch?.backupBranch;
-    setResult(reused ? `Atualizado com segurança: ${lastResult.github.fullName}. Backup: ${backup}.` : `Criado e concluído: ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success');
+    setResult(lastResult.pullRequest ? `Alterações preservadas. Revise o PR #${lastResult.pullRequest.number} antes do merge.` : reused ? `Atualizado com segurança: ${lastResult.github.fullName}. Backup: ${backup}.` : `Criado e concluído: ${lastResult.github.fullName} (${lastResult.github.sha.slice(0, 7)}).`, 'success');
     $('resultActions').classList.remove('hidden');
   } catch (error) { const violations = error.details?.violations || []; const suffix = violations.length ? `\nViolações detectadas:\n- ${violations.join('\n- ')}` : ''; setResult(error.message, 'error'); log(`ERRO: ${error.message}${suffix}`); } finally { $('start').disabled = false; }
 };
