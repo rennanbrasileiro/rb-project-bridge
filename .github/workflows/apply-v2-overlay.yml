@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       homologation_status: ${{ steps.homologate.outputs.status }}
-      homologation_tail: ${{ steps.homologate.outputs.tail }}
+      homologation_tail_b64: ${{ steps.homologate.outputs.tail_b64 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,12 +49,9 @@ jobs:
             test -f dist/index.html
           } > "$LOG" 2>&1
           status=$?
+          tail_b64="$(tail -n 30 "$LOG" | cut -c1-300 | base64 -w0)"
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          {
-            echo 'tail<<RB_DIAGNOSTIC_EOF'
-            tail -n 45 "$LOG" | cut -c1-500
-            echo 'RB_DIAGNOSTIC_EOF'
-          } >> "$GITHUB_OUTPUT"
+          echo "tail_b64=$tail_b64" >> "$GITHUB_OUTPUT"
           echo "FitHub homologation exit code: $status"
           exit 0
 
@@ -65,9 +62,10 @@ jobs:
     steps:
       - name: FitHub failure details
         env:
-          DIAGNOSTIC: ${{ needs.validate.outputs.homologation_tail }}
+          DIAGNOSTIC_B64: ${{ needs.validate.outputs.homologation_tail_b64 }}
         run: |
-          printf '%s\n' "$DIAGNOSTIC"
+          printf '%s' "$DIAGNOSTIC_B64" | base64 --decode
+          printf '\n'
           exit 1
 
   windows:
