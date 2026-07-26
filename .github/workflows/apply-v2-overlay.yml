@@ -27,6 +27,8 @@ jobs:
         run: |
           set +e
           set -o pipefail
+          LOG="$GITHUB_WORKSPACE/homologation.log"
+          EXIT_FILE="$GITHUB_WORKSPACE/homologation.exit"
           {
             git clone --depth 1 --branch main https://github.com/rennanbrasileiro/fithub.git fixture-fithub
             node - <<'NODE'
@@ -45,9 +47,9 @@ jobs:
             npm run check:standalone
             npm run build:demo
             test -f dist/index.html
-          } 2>&1 | tee homologation.log
+          } 2>&1 | tee "$LOG"
           status=${PIPESTATUS[0]}
-          echo "$status" > homologation.exit
+          echo "$status" > "$EXIT_FILE"
           exit 0
       - name: Upload FitHub homologation diagnostics
         if: always()
@@ -55,8 +57,8 @@ jobs:
         with:
           name: fithub-v2-homologation
           path: |
-            fixture-fithub/homologation.log
-            fixture-fithub/homologation.exit
+            homologation.log
+            homologation.exit
             fixture-fithub/MIGRATION_REPORT.md
             fixture-fithub/MIGRATION_REPORT.json
           if-no-files-found: warn
@@ -64,8 +66,8 @@ jobs:
       - name: Enforce FitHub homologation result
         shell: bash
         run: |
-          test -f fixture-fithub/homologation.exit
-          test "$(cat fixture-fithub/homologation.exit)" = '0'
+          test -f homologation.exit
+          test "$(cat homologation.exit)" = '0'
 
   windows:
     if: github.head_ref == 'agent/v2-standalone-supabase'
