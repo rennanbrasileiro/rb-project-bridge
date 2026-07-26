@@ -11,9 +11,6 @@ jobs:
   validate:
     if: github.head_ref == 'agent/v2-standalone-supabase'
     runs-on: ubuntu-latest
-    outputs:
-      homologation_status: ${{ steps.homologate.outputs.status }}
-      homologation_tail_b64: ${{ steps.homologate.outputs.tail_b64 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,11 +21,12 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run check
       - name: Homologate complete FitHub conversion and local build
-        id: homologate
         shell: bash
         run: |
           set +e
-          LOG="$RUNNER_TEMP/homologation.log"
+          mkdir -p .diagnostics
+          LOG="$GITHUB_WORKSPACE/.diagnostics/homologation.log"
+          STATUS="$GITHUB_WORKSPACE/.diagnostics/status"
           {
             git clone --depth 1 --branch main https://github.com/rennanbrasileiro/fithub.git fixture-fithub
             node - <<'NODE'
@@ -48,25 +46,35 @@ jobs:
             npm run build:demo
             test -f dist/index.html
           } > "$LOG" 2>&1
-          status=$?
-          tail_b64="$(tail -n 30 "$LOG" | cut -c1-300 | base64 -w0)"
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          echo "tail_b64=$tail_b64" >> "$GITHUB_OUTPUT"
-          echo "FitHub homologation exit code: $status"
+          echo "$?" > "$STATUS"
           exit 0
+      - name: Upload FitHub homologation result
+        uses: actions/upload-artifact@v4
+        with:
+          name: fithub-v2-runtime-diagnostic
+          path: .diagnostics/*
+          if-no-files-found: error
+          retention-days: 7
 
-  diagnostic:
+  gate:
     needs: validate
-    if: always() && needs.validate.outputs.homologation_status != '0'
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: FitHub failure details
-        env:
-          DIAGNOSTIC_B64: ${{ needs.validate.outputs.homologation_tail_b64 }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: fithub-v2-runtime-diagnostic
+          path: diagnostic
+      - name: Enforce FitHub local build
+        shell: bash
         run: |
-          printf '%s' "$DIAGNOSTIC_B64" | base64 --decode
-          printf '\n'
-          exit 1
+          status="$(cat diagnostic/status)"
+          if [ "$status" != '0' ]; then
+            echo '--- FitHub homologation failure ---'
+            tail -n 60 diagnostic/homologation.log | cut -c1-500
+            exit "$status"
+          fi
+          echo 'FitHub standalone conversion and local demo build passed.'
 
   windows:
     if: github.head_ref == 'agent/v2-standalone-supabase'
