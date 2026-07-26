@@ -23,9 +23,11 @@ async function main() {
   await import(pathToFileURL(cliPath).href);
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error?.stack || error?.message || String(error)}\n`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    process.stderr.write(`${error?.stack || error?.message || String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
 
-module.exports = { ARGUMENT_MARKER, extractCliArguments };
+module.exports = { ARGUMENT_MARKER, extractCliArguments, main };
