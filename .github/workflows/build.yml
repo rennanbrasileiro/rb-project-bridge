@@ -36,34 +36,45 @@ jobs:
       - name: Verify direct Base44 OAuth in unpacked and portable applications
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
           $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
+          $diagnostics = Join-Path $env:RUNNER_TEMP 'rb-base44-oauth-diagnostics'
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
           $executables = @(
-            (Resolve-Path 'release/win-unpacked/RB Project Bridge.exe'),
-            (Resolve-Path 'release/RB-Project-Bridge-Portable-0.1.5-x64.exe')
+            @{ Name = 'unpacked'; Path = (Resolve-Path 'release/win-unpacked/RB Project Bridge.exe') },
+            @{ Name = 'portable'; Path = (Resolve-Path 'release/RB-Project-Bridge-Portable-0.1.5-x64.exe') }
           )
-          $index = 0
-          foreach ($exe in $executables) {
-            $index += 1
-            $marker = Join-Path $env:RUNNER_TEMP "rb-base44-oauth-$index.json"
+          $failures = @()
+          foreach ($item in $executables) {
+            $marker = Join-Path $diagnostics "$($item.Name).json"
             Remove-Item $marker -Force -ErrorAction SilentlyContinue
             $env:RB_BRIDGE_SMOKE_MARKER = $marker
-            Write-Host "Testing real Base44 OAuth request through $exe"
-            $process = Start-Process -FilePath $exe -Wait -PassThru
-            if ($process.ExitCode -ne 0) {
-              throw "Base44 OAuth smoke failed for $exe with exit code $($process.ExitCode)."
-            }
+            Write-Host "Testing real Base44 OAuth through $($item.Path)"
+            $process = Start-Process -FilePath $item.Path -Wait -PassThru
             if (-not (Test-Path $marker)) {
-              throw "The packaged application did not create the OAuth proof marker for $exe."
+              $fallback = @{ ok = $false; error = 'Application did not create marker'; exitCode = $process.ExitCode; executable = "$($item.Path)" } | ConvertTo-Json
+              $fallback | Set-Content $marker -Encoding utf8
             }
-            $proof = Get-Content $marker -Raw | ConvertFrom-Json
-            if (-not $proof.ok) {
-              throw "Base44 OAuth proof reported failure for $exe: $($proof.error)"
-            }
-            if (-not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') {
-              throw "The packaged application did not receive a valid Base44 device-code response for $exe."
+            $raw = Get-Content $marker -Raw
+            Write-Host "OAuth proof [$($item.Name)]: $raw"
+            try { $proof = $raw | ConvertFrom-Json } catch { $proof = $null }
+            if ($process.ExitCode -ne 0) { $failures += "$($item.Name): exit code $($process.ExitCode)" }
+            if (-not $proof -or -not $proof.ok) { $failures += "$($item.Name): $($proof.error)" }
+            if ($proof.ok -and (-not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/')) {
+              $failures += "$($item.Name): invalid device-code response"
             }
           }
+          if ($failures.Count -gt 0) {
+            throw ($failures -join '; ')
+          }
+      - name: Upload Base44 OAuth diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base44-oauth-diagnostics
+          path: ${{ runner.temp }}/rb-base44-oauth-diagnostics/*.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Generate SHA-256 checksums
         shell: pwsh
         run: |
