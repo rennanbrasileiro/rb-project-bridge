@@ -1,172 +1,38 @@
-name: Build and release desktop application
+name: FitHub standalone diagnostic
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
+  diagnose:
     if: github.head_ref == 'agent/fix-base44-export-network'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-base44-export-network
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Apply resilience and repository intelligence patch
+      - name: Reproduce FitHub conversion and build
         shell: bash
         run: |
-          : > patch.log
-          if ! grep -q 'async listRepositories(owner' electron/services/github-service.cjs; then
-            python scripts/fix-0.2.3-patcher.py
-            sed -i "s#Path('.github/workflows/release.yml')#Path('.github/workflows/build.yml')#" scripts/apply-0.2.3-resilience.py
-            python scripts/apply-0.2.3-resilience.py >>patch.log 2>&1
-          fi
-          if ! grep -q 'async createPullRequest(repository' electron/services/github-service.cjs; then
-            python scripts/apply-0.2.3-safety.py >>patch.log 2>&1
-          fi
-          cat patch.log
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add electron renderer tests package.json .github/workflows/build.yml
-          if git diff --cached --quiet; then
-            echo 'Product patch already applied.'
-          else
-            git commit -m 'Finalize resilient Base44 and repository synchronization flow'
-            git push origin HEAD:agent/fix-base44-export-network
-          fi
-      - name: Upload patch diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: patch-diagnostics-0.2.3
-          path: patch.log
-          if-no-files-found: warn
-          retention-days: 3
-
-  validate:
-    needs: patch
-    if: always() && needs.patch.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-base44-export-network
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run check
-
-  fithub:
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-base44-export-network
-          path: bridge
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install Bridge dependencies
-        working-directory: bridge
-        run: npm install --no-audit --no-fund --loglevel=error
-      - name: Clone existing FitHub repository source
-        run: git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
-      - name: Convert, audit and build FitHub from existing repository
-        id: fithub_validation
-        shell: bash
-        run: |
-          log_file="$GITHUB_WORKSPACE/fithub-validation.log"
-          set +e
-          {
-            node - <<'NODE'
-            const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
-            const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
-            (async () => {
-              const result = await service.transform('fithub', { projectName: 'FitHub Personal Trainer' });
-              if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
-              console.log(`Entities converted: ${result.entities.length}`);
-            })().catch((error) => { console.error(error); process.exit(1); });
-            NODE
-            cd fithub
-            npm install --no-audit --no-fund --loglevel=error
-            npm run check:standalone
-            npm run build:demo
-            test -f dist/index.html
-          } > "$log_file" 2>&1
-          status=$?
-          set -e
-          tail -n 120 "$log_file"
-          exit $status
-      - name: Upload FitHub validation diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fithub-validation-0.2.3
-          path: ${{ github.workspace }}/fithub-validation.log
-          if-no-files-found: error
-          retention-days: 3
-
-  windows:
-    needs: [validate, fithub]
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-base44-export-network
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run check
-      - run: npm run dist:win
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Verify direct Base44 OAuth in packaged application
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
-          $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
-          $env:RB_BRIDGE_SMOKE_MARKER = $marker
-          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.3-x64.exe') -Wait -PassThru
-          if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
-          $proof = Get-Content $marker -Raw | ConvertFrom-Json
-          if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
-      - name: Generate SHA-256 checksums
-        shell: pwsh
-        run: |
-          Get-ChildItem release -File | Where-Object { $_.Extension -eq '.exe' } | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)"
-          } | Set-Content release/SHA256SUMS.txt -Encoding utf8
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rb-project-bridge-windows-0.2.3
-          path: release/*
-          if-no-files-found: error
-          retention-days: 30
-      - name: Publish 0.2.3 RC1 release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v0.2.3-rc1
-          target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.2.3 RC1
-          prerelease: true
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: |
-            release/RB-Project-Bridge-Setup-0.2.3-x64.exe
-            release/RB-Project-Bridge-Portable-0.2.3-x64.exe
-            release/SHA256SUMS.txt
+          set -euo pipefail
+          git clone --depth 1 --branch agent/fix-base44-export-network https://github.com/rennanbrasileiro/rb-project-bridge.git bridge
+          git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
+          cd bridge
+          npm install --no-audit --no-fund --loglevel=error
+          cd ..
+          node - <<'NODE'
+          const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
+          const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
+          (async () => {
+            const result = await service.transform('fithub', { projectName: 'FitHub Personal Trainer' });
+            console.log('TRANSFORM_RESULT', JSON.stringify({ gate: result.gate, entities: result.entities.length, functions: result.functions.length }));
+            if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
+          })().catch((error) => { console.error(error.stack || error); process.exit(1); });
+          NODE
+          cd fithub
+          npm install --no-audit --no-fund --loglevel=error
+          npm run check:standalone
+          npm run build:demo
+          test -f dist/index.html
