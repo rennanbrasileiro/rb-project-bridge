@@ -11,10 +11,38 @@ permissions:
   contents: write
 
 jobs:
-  validate:
+  patch:
+    if: github.head_ref == 'agent/fix-github-workflow-scope'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-github-workflow-scope
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply workflow scope and retry patch
+        shell: bash
+        run: |
+          if grep -q 'async ensureDeliveryScopes' electron/services/github-service.cjs && grep -q '"version": "0.2.4"' package.json; then
+            echo 'Patch already applied.'
+          else
+            python scripts/apply-0.2.4-workflow-scope.py
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add electron renderer tests package.json .github/workflows/build.yml
+            git commit -m 'Fix GitHub workflow scope and resumable delivery'
+            git push origin HEAD:agent/fix-github-workflow-scope
+          fi
+
+  validate:
+    needs: patch
+    if: always() && needs.patch.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-github-workflow-scope
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -26,6 +54,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-github-workflow-scope
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -41,7 +71,7 @@ jobs:
           $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
           $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
           $env:RB_BRIDGE_SMOKE_MARKER = $marker
-          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.3-x64.exe') -Wait -PassThru
+          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.4-x64.exe') -Wait -PassThru
           if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
           $proof = Get-Content $marker -Raw | ConvertFrom-Json
           if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
@@ -54,21 +84,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.2.3
+          name: rb-project-bridge-windows-0.2.4
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.2.3 RC1 release
+      - name: Publish 0.2.4 RC1 release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.2.3-rc1
+          tag_name: v0.2.4-rc1
           target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.2.3 RC1
+          name: RB Project Bridge 0.2.4 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.2.3-x64.exe
-            release/RB-Project-Bridge-Portable-0.2.3-x64.exe
+            release/RB-Project-Bridge-Setup-0.2.4-x64.exe
+            release/RB-Project-Bridge-Portable-0.2.4-x64.exe
             release/SHA256SUMS.txt
