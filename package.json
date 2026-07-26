@@ -1,6 +1,6 @@
 {
   "name": "rb-project-bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Desktop bridge to export Base44 projects, audit them, and publish safely to GitHub.",
   "main": "electron/main.cjs",
   "author": "RB HUB",
