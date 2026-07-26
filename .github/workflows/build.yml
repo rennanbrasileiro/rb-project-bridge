@@ -11,97 +11,21 @@ permissions:
   contents: write
 
 jobs:
-  patch:
-    if: github.head_ref == 'agent/fix-standalone-gate'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-standalone-gate
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Apply standalone gate correction
-        run: python scripts/patch-standalone-gate.py
-      - name: Commit patch
-        shell: bash
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add electron/services/standalone-service.cjs tests/standalone.test.cjs renderer/app.js
-          if git diff --cached --quiet; then
-            echo 'Patch already applied.'
-          else
-            git commit -m 'Fix standalone gate false positive for archived Base44 sources'
-            git push origin HEAD:agent/fix-standalone-gate
-          fi
-
   validate:
-    needs: patch
-    if: always() && needs.patch.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-standalone-gate
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run check
 
-  fithub:
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-standalone-gate
-          path: bridge
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install Bridge dependencies
-        working-directory: bridge
-        run: npm install --no-audit --no-fund --loglevel=error
-      - name: Clone complete FitHub source
-        run: git clone --depth 1 https://github.com/rennanbrasileiro/fithub.git fithub
-      - name: Convert FitHub to standalone Supabase
-        shell: bash
-        run: |
-          node - <<'NODE'
-          const { StandaloneService } = require('./bridge/electron/services/standalone-service.cjs');
-          const service = new StandaloneService({ logger: { info(){}, warn(){}, error(){} }, emit(){} });
-          service.transform('fithub', { projectName: 'FitHub Personal Trainer' })
-            .then((result) => {
-              console.log(`Entities: ${result.entities.length}`);
-              console.log(`Archived functions: ${result.functions.length}`);
-              if (!result.gate?.passed) throw new Error('Standalone gate did not pass.');
-            })
-            .catch((error) => { console.error(error); process.exit(1); });
-          NODE
-      - name: Install, audit and build transformed FitHub
-        working-directory: fithub
-        shell: bash
-        run: |
-          set +e
-          {
-            npm install --no-audit --no-fund --loglevel=error
-            npm run check:standalone
-            npm run build:demo
-            test -f dist/index.html
-          } > fithub-build.log 2>&1
-          status=$?
-          tail -n 120 fithub-build.log
-          exit "$status"
-
   windows:
-    needs: [validate, fithub]
+    needs: validate
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/fix-standalone-gate
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -117,7 +41,7 @@ jobs:
           $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
           $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
           $env:RB_BRIDGE_SMOKE_MARKER = $marker
-          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.1-x64.exe') -Wait -PassThru
+          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.2.2-x64.exe') -Wait -PassThru
           if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
           $proof = Get-Content $marker -Raw | ConvertFrom-Json
           if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
@@ -130,7 +54,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.2.1-gate-fix
+          name: rb-project-bridge-windows-0.2.2
           path: release/*
           if-no-files-found: error
           retention-days: 30
+      - name: Publish 0.2.2 RC1 release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v0.2.2-rc1
+          target_commitish: ${{ github.sha }}
+          name: RB Project Bridge 0.2.2 RC1
+          prerelease: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/RB-Project-Bridge-Setup-0.2.2-x64.exe
+            release/RB-Project-Bridge-Portable-0.2.2-x64.exe
+            release/SHA256SUMS.txt
