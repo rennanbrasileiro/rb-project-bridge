@@ -65,7 +65,9 @@ test('31 transforms an exported project into a standalone Supabase handoff', asy
   assert.match(await fs.readFile(path.join(root, 'src', 'api', 'base44Client.js'), 'utf8'), /createClient.*supabase-js/s);
   await assert.rejects(fs.access(path.join(root, 'base44')));
   await assert.rejects(fs.access(path.join(root, 'src', 'lib', 'app-params.js')));
-  assert.doesNotMatch(await fs.readFile(path.join(root, 'vite.config.js'), 'utf8'), /base44/);
+  const viteConfig = await fs.readFile(path.join(root, 'vite.config.js'), 'utf8');
+  assert.doesNotMatch(viteConfig, /base44/);
+  assert.match(viteConfig, /alias:[\s\S]*['"]@['"]:[\s\S]*path\.resolve\(process\.cwd\(\), ['"]src['"]\)/);
   assert.ok(await fs.stat(path.join(root, '.github', 'workflows', 'validate.yml')));
   await fs.rm(root, { recursive: true, force: true });
 });

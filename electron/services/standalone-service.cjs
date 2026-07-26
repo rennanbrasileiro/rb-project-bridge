@@ -254,6 +254,14 @@ class StandaloneService {
       let source = await fs.readFile(file, 'utf8');
       source = source.split(/\r?\n/).filter((line) => !line.includes('@base44/vite-plugin')).join('\n');
       source = removeFunctionCall(source, 'base44');
+      if (!/from\s+['"]node:path['"]/.test(source)) source = `import path from 'node:path';\n${source}`;
+      if (!/alias\s*:\s*\{[\s\S]*?['"]?@['"]?\s*:/.test(source)) {
+        if (/defineConfig\s*\(\s*\{/.test(source)) {
+          source = source.replace(/defineConfig\s*\(\s*\{/, "defineConfig({\n  resolve: { alias: { '@': path.resolve(process.cwd(), 'src') } },");
+        } else {
+          source = `import react from '@vitejs/plugin-react';\nimport { defineConfig } from 'vite';\nimport path from 'node:path';\n\nexport default defineConfig({\n  resolve: { alias: { '@': path.resolve(process.cwd(), 'src') } },\n  plugins: [react()],\n});\n`;
+        }
+      }
       await fs.writeFile(file, `${source.trim()}\n`, 'utf8');
       return candidate;
     }
