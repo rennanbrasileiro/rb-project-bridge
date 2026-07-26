@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { JsonLogger } = require('./core/logger.cjs');
 const { BridgeError, asBridgeError } = require('./core/errors.cjs');
 const { safeSlug } = require('./core/fs-utils.cjs');
+const { setDeliveryContext } = require('./core/delivery-context.cjs');
 const { Base44Service } = require('./services/base44-service.cjs');
 const { ToolchainService } = require('./services/toolchain-service.cjs');
 const { GitHubService } = require('./services/github-service.cjs');
@@ -33,16 +34,8 @@ function createServices() {
   const base44 = new Base44Service({ ...common, sessionDir: path.join(sessionRoot, 'base44'), openExternal });
   const github = new GitHubService({ ...common, toolchain, sessionDir: path.join(sessionRoot, 'github'), openExternal });
   const security = new SecurityService(common);
-  const preview = new PreviewService({
-    logger,
-    emit,
-    openExternal,
-    createBrowserWindow: (options) => new BrowserWindow(options),
-  });
-  const build = new BuildService({
-    ...common,
-    runtimeValidator: (directory, options) => preview.validateRuntime(directory, options),
-  });
+  const preview = new PreviewService({ logger, emit, openExternal, createBrowserWindow: (options) => new BrowserWindow(options) });
+  const build = new BuildService({ ...common, runtimeValidator: (directory, options) => preview.validateRuntime(directory, options) });
   const standalone = new StandaloneService(common);
   const archive = new ArchiveService({ emit });
   const reports = new ReportService({ userDataDir, logger });
@@ -52,7 +45,7 @@ function createServices() {
 }
 
 function serializeError(error) { const normalized = asBridgeError(error); return { name: normalized.name, code: normalized.code, message: normalized.message, details: normalized.details }; }
-function handle(channel, action) { ipcMain.handle(channel, async (_event, ...args) => { try { return { ok: true, data: await action(...args) }; } catch (error) { services?.logger?.error('ipc.error', { channel, error: serializeError(error) }); return { ok: false, error: serializeError(error) }; } }); }
+function handle(channel, action) { ipcMain.handle(channel, async (_event, ...args) => { try { return { ok: true, data: await action(...args) }; } catch (error) { services?.logger?.error('ipc.error', { channel, error: serializeError(error) }); return { ok: false, error: serializeErrorError ? serializeError(error) : serializeError(error) }; } }); }
 
 function validateMigrationInput(input) {
   if (!input || typeof input !== 'object') throw new BridgeError('INVALID_INPUT', 'Os dados da operação são obrigatórios.');
@@ -85,6 +78,7 @@ function registerIpc() {
   handle('system:open-external', async (url) => { const parsed = new URL(url); if (!['https:', 'http:'].includes(parsed.protocol)) throw new BridgeError('INVALID_URL', 'Somente links HTTP/HTTPS podem ser abertos.'); if (parsed.protocol === 'http:' && !['127.0.0.1', 'localhost'].includes(parsed.hostname)) throw new BridgeError('INVALID_URL', 'Links HTTP são permitidos apenas para preview local.'); await shell.openExternal(parsed.href); return true; });
   handle('base44:status', () => services.base44.whoami()); handle('base44:login', () => services.base44.login()); handle('base44:logout', () => services.base44.logout()); handle('base44:projects', () => services.base44.listProjects());
   handle('github:status', () => services.github.authStatus()); handle('github:login', () => services.github.login()); handle('github:logout', () => services.github.logout()); handle('github:accounts', () => services.github.getAccounts()); handle('github:ensure-delivery-scopes', () => services.github.ensureDeliveryScopes()); handle('github:repositories', (owner, ownerType) => services.github.listRepositories(owner, ownerType)); handle('github:source-status', (input) => services.github.inspectSourceStatus(input));
+  handle('delivery:set-context', (input) => setDeliveryContext(input));
   handle('migration:start', (input) => services.migration.migrate(validateMigrationInput(input)));
   handle('migration:cancel', () => { const migration = services.migration.cancel(); const repair = services.previewRepair.cancel(); return { cancelled: Boolean(migration.cancelled || repair.cancelled) }; });
   handle('migration:retry-publish', (jobRoot) => services.migration.retryPublish(validateJobRoot(jobRoot)));
