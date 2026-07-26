@@ -34,6 +34,92 @@ class GitHubService {
   async logout() { try { await this.runGh(['auth', 'logout', '--hostname', 'github.com'], { timeoutMs: 60_000, input: 'Y\n' }); } catch {} await fs.rm(this.sessionDir, { recursive: true, force: true }); return { authenticated: false }; }
   parseJson(output) { try { return JSON.parse(output); } catch { const lines = output.split(/\r?\n/).filter(Boolean); for (let index = lines.length - 1; index >= 0; index -= 1) { try { return JSON.parse(lines[index]); } catch {} } return null; } }
   async getAccounts() { const status = await this.authStatus(); if (!status.authenticated) return { authenticated: false, accounts: [] }; const user = this.parseJson((await this.runGh(['api', 'user'], { timeoutMs: 60_000 })).stdout); let orgs = []; try { const parsed = this.parseJson((await this.runGh(['api', 'user/orgs', '--paginate', '--slurp'], { timeoutMs: 60_000 })).stdout) || []; orgs = Array.isArray(parsed[0]) ? parsed.flat() : parsed; } catch (error) { this.logger.warn('github.organizations.unavailable', { message: error.message }); } if (!user?.login) throw new BridgeError('GITHUB_PROFILE_UNAVAILABLE', 'GitHub did not return the authenticated profile.'); return { authenticated: true, user: { login: user.login, name: user.name || user.login, avatarUrl: user.avatar_url }, accounts: [{ login: user.login, type: 'user', label: user.name ? `${user.name} (${user.login})` : user.login }, ...orgs.map((org) => ({ login: org.login, type: 'organization', label: org.login }))] }; }
+  async listRepositories(owner, ownerType = 'user') {
+    const endpoint = ownerType === 'organization'
+      ? `orgs/${owner}/repos?per_page=100&sort=updated`
+      : 'user/repos?per_page=100&sort=updated&affiliation=owner';
+    const parsed = this.parseJson((await this.runGh(['api', endpoint, '--paginate', '--slurp'], { timeoutMs: 120_000 })).stdout) || [];
+    const repositories = Array.isArray(parsed?.[0]) ? parsed.flat() : (Array.isArray(parsed) ? parsed : []);
+    return repositories
+      .filter((repository) => repository?.owner?.login?.toLowerCase() === String(owner).toLowerCase())
+      .map((repository) => ({
+        name: repository.name,
+        fullName: repository.full_name,
+        private: Boolean(repository.private),
+        defaultBranch: repository.default_branch || 'main',
+        description: repository.description || '',
+        updatedAt: repository.updated_at || null,
+        htmlUrl: repository.html_url,
+      }));
+  }
+  async readRepositoryJson(repository, filePath, branches = ['base44-source', 'main']) {
+    for (const branch of branches) {
+      try {
+        const endpoint = `repos/${repository.full_name}/contents/${filePath}?ref=${encodeURIComponent(branch)}`;
+        const payload = this.parseJson((await this.runGh(['api', endpoint], { timeoutMs: 30_000 })).stdout);
+        if (!payload?.content) continue;
+        const text = Buffer.from(String(payload.content).replace(/\s/g, ''), 'base64').toString('utf8');
+        return { branch, data: JSON.parse(text) };
+      } catch (error) {
+        const detail = `${error.message || ''} ${error.details?.stderr || ''}`;
+        if (!/404|not found/i.test(detail)) this.logger.warn('github.manifest.read.failed', { repository: repository.full_name, branch, filePath, message: error.message });
+      }
+    }
+    return null;
+  }
+  async inspectSourceStatus({ owner, name, project }) {
+    if (!(await this.repositoryExists(owner, name))) return { exists: false, repository: null, source: null, status: 'new-repository' };
+    const repository = await this.getRepository(owner, name);
+    const source = await this.readRepositoryJson(repository, 'RB-BRIDGE-SOURCE.json');
+    let latestCommitAt = null;
+    try {
+      const commit = this.parseJson((await this.runGh(['api', `repos/${repository.full_name}/commits/${encodeURIComponent(repository.default_branch || 'main')}`], { timeoutMs: 30_000 })).stdout);
+      latestCommitAt = commit?.commit?.committer?.date || commit?.commit?.author?.date || null;
+    } catch {}
+    const previousUpdatedAt = source?.data?.base44UpdatedAt || null;
+    const currentUpdatedAt = project?.updatedAt || null;
+    const base44Changed = Boolean(previousUpdatedAt && currentUpdatedAt && new Date(currentUpdatedAt).getTime() > new Date(previousUpdatedAt).getTime() + 1000);
+    const githubChanged = Boolean(source?.data?.deliveredAt && latestCommitAt && new Date(latestCommitAt).getTime() > new Date(source.data.deliveredAt).getTime() + 120000);
+    return {
+      exists: true,
+      repository: { name: repository.name, fullName: repository.full_name, private: Boolean(repository.private), defaultBranch: repository.default_branch || 'main', htmlUrl: repository.html_url, updatedAt: repository.updated_at || null },
+      source: source ? { branch: source.branch, ...source.data } : null,
+      currentBase44UpdatedAt: currentUpdatedAt,
+      latestCommitAt,
+      base44Changed,
+      githubChanged,
+      status: !source ? 'unlinked' : base44Changed ? (githubChanged ? 'both-changed' : 'base44-newer') : githubChanged ? 'github-newer' : 'in-sync',
+    };
+  }
+  async cloneBase44Source({ owner, name, destination }, options = {}) {
+    if (!(await this.repositoryExists(owner, name))) return null;
+    const repository = await this.getRepository(owner, name);
+    const branches = ['base44-source', repository.default_branch || 'main'];
+    const token = await this.getAuthenticationToken(); const askPass = await this.createAskPass(); const authEnv = { GIT_ASKPASS: askPass, GIT_TERMINAL_PROMPT: '0', RB_BRIDGE_GH_TOKEN: token };
+    try {
+      for (const branch of [...new Set(branches)]) {
+        const ref = await this.getBranchRef(repository, branch, options);
+        if (!ref?.object?.sha) continue;
+        await fs.rm(destination, { recursive: true, force: true });
+        try {
+          await this.runGit(['clone', '--depth', '1', '--single-branch', '--branch', branch, repository.clone_url, destination], { timeoutMs: 10 * 60 * 1000, signal: options.signal, env: authEnv });
+          const packagePath = path.join(destination, 'package.json');
+          const packageText = await fs.readFile(packagePath, 'utf8').catch(() => '');
+          const hasBase44Directory = await fs.stat(path.join(destination, 'base44')).then((entry) => entry.isDirectory()).catch(() => false);
+          const looksLikeSource = hasBase44Directory || /@base44\/(sdk|vite-plugin)|"base44"\s*:/.test(packageText);
+          if (!looksLikeSource) { await fs.rm(destination, { recursive: true, force: true }); continue; }
+          await fs.rm(path.join(destination, '.git'), { recursive: true, force: true });
+          const entries = await fs.readdir(destination);
+          this.emit('migration:progress', { step: 'base44-export', status: 'complete', message: `Snapshot Base44 reaproveitado de ${repository.full_name}:${branch}.` });
+          return { destination, entries: entries.length, source: 'github-fallback', repository: repository.full_name, branch, sha: ref.object.sha };
+        } catch (error) {
+          await fs.rm(destination, { recursive: true, force: true });
+          this.logger.warn('github.source.clone.failed', { repository: repository.full_name, branch, message: error.message });
+        }
+      }
+    } finally { delete authEnv.RB_BRIDGE_GH_TOKEN; }
+    return null;
+  }
   async repositoryExists(owner, name) { try { await this.runGh(['api', `repos/${owner}/${name}`], { timeoutMs: 30_000 }); return true; } catch { return false; } }
   async getRepository(owner, name) { const parsed = this.parseJson((await this.runGh(['api', `repos/${owner}/${name}`], { timeoutMs: 30_000 })).stdout); if (!parsed?.full_name) throw new BridgeError('REPOSITORY_UNAVAILABLE', `Não foi possível consultar ${owner}/${name}.`); return parsed; }
   async ensurePrivate(owner, name, options = {}) {
@@ -52,7 +138,10 @@ class GitHubService {
     return this.ensurePrivate(owner, name, options);
   }
   async resolveRepository(input, options = {}) {
-    if (await this.repositoryExists(input.owner, input.name)) {
+    const exists = await this.repositoryExists(input.owner, input.name);
+    if (input.strategy === 'reuse' && !exists) throw new BridgeError('REPOSITORY_NOT_FOUND', `O repositório ${input.owner}/${input.name} não existe mais. Atualize a lista antes de continuar.`);
+    if (input.strategy === 'create' && exists) throw new BridgeError('REPOSITORY_ALREADY_EXISTS', `O repositório ${input.owner}/${input.name} já existe. Selecione-o na lista em vez de criar outro.`);
+    if (exists) {
       const repository = await this.ensurePrivate(input.owner, input.name, options);
       this.emit('migration:progress', { step: 'github-publish', status: 'running', message: `Reutilizando ${repository.full_name}; nenhuma branch será excluída.` });
       return { repository, reused: true };
