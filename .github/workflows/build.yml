@@ -11,10 +11,39 @@ permissions:
   contents: write
 
 jobs:
-  validate:
+  patch:
+    if: github.head_ref == 'agent/fix-standalone-gate'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-standalone-gate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply standalone gate correction
+        run: python scripts/patch-standalone-gate.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add electron/services/standalone-service.cjs tests/standalone.test.cjs renderer/app.js
+          if git diff --cached --quiet; then
+            echo 'Patch already applied.'
+          else
+            git commit -m 'Fix standalone gate false positive for archived Base44 sources'
+            git push origin HEAD:agent/fix-standalone-gate
+          fi
+
+  validate:
+    needs: patch
+    if: always() && needs.patch.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-standalone-gate
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -26,6 +55,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-standalone-gate
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -54,21 +85,7 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.2.1
+          name: rb-project-bridge-windows-0.2.1-gate-fix
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.2.1 RC1 release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v0.2.1-rc1
-          target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.2.1 RC1
-          prerelease: true
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: |
-            release/RB-Project-Bridge-Setup-0.2.1-x64.exe
-            release/RB-Project-Bridge-Portable-0.2.1-x64.exe
-            release/SHA256SUMS.txt
