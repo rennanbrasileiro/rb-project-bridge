@@ -1,7 +1,8 @@
 'use strict';
 
+const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { JsonLogger } = require('./core/logger.cjs');
 const { BridgeError, asBridgeError } = require('./core/errors.cjs');
 const { safeSlug } = require('./core/fs-utils.cjs');
@@ -16,7 +17,7 @@ const { MigrationService } = require('./services/migration-service.cjs');
 
 let mainWindow;
 let services;
-const base44SmokeMode = process.argv.includes('--smoke-base44-cli');
+const base44SmokeMode = process.env.RB_BRIDGE_SMOKE_BASE44_OAUTH === '1';
 
 function emit(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
@@ -36,7 +37,6 @@ function createServices() {
     ...common,
     sessionDir: path.join(sessionRoot, 'base44'),
     openExternal,
-    utilityProcess,
   });
   const github = new GitHubService({
     ...common,
@@ -68,15 +68,15 @@ function handle(channel, action) {
 }
 
 function validateMigrationInput(input) {
-  if (!input || typeof input !== 'object') throw new BridgeError('INVALID_INPUT', 'Migration input is required.');
-  if (!input.acceptedAuthorization) throw new BridgeError('AUTHORIZATION_REQUIRED', 'Confirm that the project owner authorized this migration.');
-  if (!input.project?.id || !input.project?.name) throw new BridgeError('PROJECT_REQUIRED', 'Select a Base44 project.');
-  if (!input.outputDirectory || typeof input.outputDirectory !== 'string') throw new BridgeError('OUTPUT_DIRECTORY_REQUIRED', 'Select an output directory.');
+  if (!input || typeof input !== 'object') throw new BridgeError('INVALID_INPUT', 'Os dados da migração são obrigatórios.');
+  if (!input.acceptedAuthorization) throw new BridgeError('AUTHORIZATION_REQUIRED', 'Confirme que o proprietário autorizou esta migração.');
+  if (!input.project?.id || !input.project?.name) throw new BridgeError('PROJECT_REQUIRED', 'Selecione um projeto Base44.');
+  if (!input.outputDirectory || typeof input.outputDirectory !== 'string') throw new BridgeError('OUTPUT_DIRECTORY_REQUIRED', 'Selecione uma pasta de entrega.');
   const repo = input.repository;
-  if (!repo?.owner || !repo?.ownerType) throw new BridgeError('GITHUB_OWNER_REQUIRED', 'Select a GitHub account or organization.');
-  if (!['user', 'organization'].includes(repo.ownerType)) throw new BridgeError('INVALID_GITHUB_OWNER_TYPE', 'The GitHub owner type is invalid.');
+  if (!repo?.owner || !repo?.ownerType) throw new BridgeError('GITHUB_OWNER_REQUIRED', 'Selecione uma conta ou organização GitHub.');
+  if (!['user', 'organization'].includes(repo.ownerType)) throw new BridgeError('INVALID_GITHUB_OWNER_TYPE', 'O tipo de proprietário GitHub é inválido.');
   repo.name = safeSlug(repo.name, safeSlug(input.project.name));
-  if (!/^[a-z0-9._-]{1,100}$/i.test(repo.name)) throw new BridgeError('INVALID_REPOSITORY_NAME', 'The repository name is invalid.');
+  if (!/^[a-z0-9._-]{1,100}$/i.test(repo.name)) throw new BridgeError('INVALID_REPOSITORY_NAME', 'O nome do repositório é inválido.');
   repo.visibility = repo.visibility === 'public' ? 'public' : 'private';
   repo.description = String(repo.description ?? '').slice(0, 350);
   repo.commitMessage = String(repo.commitMessage ?? '').slice(0, 200);
@@ -98,14 +98,14 @@ function registerIpc() {
     return result.canceled ? null : result.filePaths[0];
   });
   handle('system:open-path', async (target) => {
-    if (typeof target !== 'string' || !path.isAbsolute(target)) throw new BridgeError('INVALID_PATH', 'Only absolute local paths can be opened.');
+    if (typeof target !== 'string' || !path.isAbsolute(target)) throw new BridgeError('INVALID_PATH', 'Somente caminhos locais absolutos podem ser abertos.');
     const error = await shell.openPath(target);
     if (error) throw new BridgeError('OPEN_PATH_FAILED', error);
     return true;
   });
   handle('system:open-external', async (url) => {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:') throw new BridgeError('INVALID_URL', 'Only HTTPS links can be opened.');
+    if (parsed.protocol !== 'https:') throw new BridgeError('INVALID_URL', 'Somente links HTTPS podem ser abertos.');
     await shell.openExternal(parsed.href);
     return true;
   });
@@ -123,7 +123,7 @@ function registerIpc() {
   handle('migration:start', (input) => services.migration.migrate(validateMigrationInput(input)));
   handle('migration:cancel', () => services.migration.cancel());
   handle('migration:retry-publish', (jobRoot) => {
-    if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'A valid migration directory is required.');
+    if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'É necessária uma pasta de migração válida.');
     return services.migration.retryPublish(jobRoot);
   });
   handle('migration:history', () => services.reports.getHistory());
@@ -161,17 +161,24 @@ function createWindow() {
 
 async function runBase44Smoke() {
   services = createServices();
+  const markerPath = process.env.RB_BRIDGE_SMOKE_MARKER;
   try {
-    await services.base44.runCli(['login', '--help'], {
-      timeoutMs: 60_000,
-      onOutput: ({ stream, text }) => {
-        if (stream === 'stderr') process.stderr.write(text);
-        else process.stdout.write(text);
-      },
-    });
-    process.stdout.write('Packaged Base44 utility-process smoke test passed.\n');
+    const device = await services.base44.requestDeviceCode();
+    if (!device.userCode || !device.verificationUri || !device.deviceCode) {
+      throw new Error('A Base44 não retornou o fluxo OAuth esperado.');
+    }
+    if (markerPath) {
+      await fsp.writeFile(markerPath, JSON.stringify({
+        ok: true,
+        userCode: device.userCode,
+        verificationUri: device.verificationUri,
+      }), 'utf8');
+    }
     app.exit(0);
   } catch (error) {
+    if (markerPath) {
+      await fsp.writeFile(markerPath, JSON.stringify({ ok: false, error: error.message }), 'utf8').catch(() => null);
+    }
     process.stderr.write(`${error.stack || error.message}\n`);
     app.exit(1);
   }
