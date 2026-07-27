@@ -53,7 +53,22 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
       - name: Run generated verifier against real Supabase Docker services
+        id: functional_smoke
+        continue-on-error: true
         run: node tests/run-supabase-functional-smoke.cjs
+      - name: Upload functional smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-smoke-diagnostics
+          path: artifacts/functional-smoke/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce functional smoke result
+        if: steps.functional_smoke.outcome != 'success'
+        run: |
+          echo 'The generated Supabase verifier failed. Download functional-smoke-diagnostics for the exact step and error.'
+          exit 1
 
   windows:
     needs: [validate, functional-smoke]
