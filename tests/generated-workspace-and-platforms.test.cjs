@@ -67,12 +67,14 @@ test('runtime grants permit authenticated CRUD while RLS remains the row boundar
   report = await applyRuntimeGrants(root, report);
   const grants = await fs.readFile(path.join(root, 'supabase', 'migrations', RUNTIME_GRANTS_MIGRATION), 'utf8');
   const verification = await fs.readFile(path.join(root, 'supabase', 'migrations', VERIFICATION_MIGRATION), 'utf8');
+  assert.match(grants, /grant usage on schema public to anon, authenticated/);
   assert.match(grants, /grant select, update on table public\."profiles" to authenticated/);
   assert.match(grants, /grant select, insert, update, delete on table public\."workouts" to authenticated/);
+  assert.doesNotMatch(grants, /on table public\."workouts" to anon/);
   assert.match(verification, /grant select on table public\.rb_bridge_smoke to anon/);
   assert.match(verification, /grant select, insert, update, delete on table public\.rb_bridge_smoke to authenticated/);
   assert.equal(report.runtimeGrants.prepared, true);
-  assert.doesNotMatch(runtimeGrantSql([{ table: 'workouts' }]), /to anon/);
+  assert.doesNotMatch(runtimeGrantSql([{ table: 'workouts' }]), /on table public\."workouts" to anon/);
 });
 
 test('source adapter produces a normalized platform-neutral manifest', async () => {
