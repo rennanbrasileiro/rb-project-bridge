@@ -22,7 +22,7 @@ jobs:
       - name: Validate Electron core syntax
         run: node --check electron/main-entry.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs
       - name: Validate patches and migration syntax
-        run: node --check electron/patches/review-history-patch.cjs && node --check electron/patches/verification-integrity-patch.cjs && node --check electron/patches/functional-workspace-patch.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs
+        run: node --check electron/patches/review-history-patch.cjs && node --check electron/patches/verification-integrity-patch.cjs && node --check electron/patches/functional-workspace-patch.cjs && node --check electron/patches/runtime-grants-patch.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs
       - name: Validate verification and control services syntax
         run: node --check electron/services/verification-ledger-service.cjs && node --check electron/services/defect-service.cjs && node --check electron/services/functional-verification-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/operation-summary-service.cjs && node --check electron/services/operation-control-service.cjs
       - name: Validate adapters and reporting syntax
