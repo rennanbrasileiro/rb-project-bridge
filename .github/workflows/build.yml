@@ -27,8 +27,12 @@ jobs:
         run: node --check electron/services/verification-ledger-service.cjs && node --check electron/services/defect-service.cjs && node --check electron/services/functional-verification-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/operation-summary-service.cjs && node --check electron/services/operation-control-service.cjs
       - name: Validate adapters and reporting syntax
         run: node --check electron/services/platform-capability-service.cjs && node --check electron/sources/source-adapter.cjs && node --check electron/sources/base44-source-adapter.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs && node --check electron/services/github-service.cjs
-      - name: Validate renderer syntax
-        run: node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js && node --check renderer/operation-decision-ui.js && node --check renderer/functional-verification-ui.js
+      - name: Validate existing renderer syntax
+        run: node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js
+      - name: Validate decision renderer syntax
+        run: node --check renderer/operation-decision-ui.js
+      - name: Validate functional verification renderer syntax
+        run: node --check renderer/functional-verification-ui.js
       - name: Validate FitHub integrity and functional portability regressions
         run: node --test tests/functional-portability.test.cjs tests/preview-repair.test.cjs tests/review-history-patch.test.cjs
       - name: Validate runtime, readiness and client handoff regressions
