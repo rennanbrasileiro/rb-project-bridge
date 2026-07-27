@@ -7,6 +7,7 @@
   <title>RB Project Bridge</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="delivery-ui.css">
+  <link rel="stylesheet" href="operation-decision-ui.css">
 </head>
 <body>
   <main>
@@ -71,11 +72,23 @@
       <div id="result" class="result-panel idle" aria-live="polite"><strong id="resultTitle">Pronto para iniciar</strong><p id="resultMessage">Preencha as etapas acima. O resultado e a próxima ação aparecerão aqui.</p><div id="resultMeta" class="result-meta"></div></div>
       <div id="resultActions" class="row result-actions hidden"><button id="openPreview" class="primary">Abrir preview</button><button id="repairPreview" class="secondary">Recriar e validar preview</button><button id="openFolder">Abrir pasta da operação</button><button id="openDelivery" class="secondary">Abrir pacote do cliente</button><button id="openRepo">Abrir destino</button><button id="stopPreview" class="ghost">Parar preview</button></div>
       <details id="logDetails" class="technical-details"><summary>Ver detalhes técnicos</summary><pre id="log"></pre></details>
+
+      <section id="operationDecision" class="operation-decision hidden" aria-live="polite">
+        <div class="operation-decision-header"><div><span class="eyebrow">Fechamento e continuidade</span><h3 id="decisionTitle">Estado atual da operação</h3><p id="decisionSubtitle"></p></div></div>
+        <div id="decisionStatusGrid" class="decision-status-grid"></div>
+        <div class="decision-section"><h4>O que pode ser feito agora</h4><div id="decisionGuidance" class="decision-guidance"></div></div>
+        <div class="decision-section"><h4>Escopo selecionado x homologado</h4><p>Esta matriz mostra exatamente o que foi marcado antes da operação e o que já possui evidência.</p><div class="decision-table-wrap"><table class="decision-table"><thead><tr><th>Item</th><th>Escopo</th><th>Estado</th><th>Interpretação</th></tr></thead><tbody id="decisionScopeBody"></tbody></table></div></div>
+        <div class="decision-section"><h4>Registrar homologações</h4><p>O registro atualiza os relatórios locais. O GitHub não é alterado automaticamente.</p><div id="decisionValidations" class="validation-grid"></div></div>
+        <div class="decision-section"><h4>Próximos passos obrigatórios</h4><div id="decisionNextActions"></div></div>
+        <div class="decision-section"><h4>Como evoluir sem refazer a migração</h4><div id="decisionEvolution" class="evolution-grid"></div></div>
+        <div class="decision-footer"><p id="decisionPackageState" class="package-state"></p><div class="decision-footer-actions"><button id="openWorkspaceDecision" class="secondary">Abrir workspace evolutivo</button><button id="openPlanDecision">Abrir plano de execução</button><button id="openExtensionDecision">Abrir pedido de extensão</button><button id="regeneratePackageDecision" class="primary">Recalcular e gerar pacote</button></div></div>
+      </section>
     </section>
   </main>
   <script src="app.js"></script>
   <script src="repair-preview.js"></script>
   <script src="readiness-ui.js"></script>
   <script src="delivery-ui.js"></script>
+  <script src="operation-decision-ui.js"></script>
 </body>
 </html>

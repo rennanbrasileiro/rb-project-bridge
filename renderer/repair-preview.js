@@ -6,7 +6,7 @@ function repairableHistoryEntry(entry) {
   return entry?.jobRoot && entry?.previewDir && entry?.status === 'completed' ? entry : null;
 }
 
-function showCompletedOperation(entry) {
+function showCompletedOperation(entry, operationState = null) {
   const card = $('completedCard');
   if (!entry) {
     latestRepairJobRoot = null;
@@ -16,15 +16,17 @@ function showCompletedOperation(entry) {
   }
 
   latestRepairJobRoot = entry.jobRoot;
-  const project = entry.project?.name || 'Produto';
+  const project = entry.project?.name || operationState?.result?.project?.name || 'Produto';
   $('completedTitle').textContent = `${project}: operação local disponível`;
   $('completedMessage').textContent = entry.previewRepaired
-    ? 'O preview já foi reconstruído e validado. Você pode abri-lo novamente ou repetir a validação.'
-    : 'Você pode corrigir compatibilidades, recompilar e validar este preview sem reexportar a Base44 nem alterar o GitHub.';
+    ? 'O preview já foi reconstruído e validado. Você pode abri-lo novamente, registrar homologações ou repetir a validação.'
+    : 'Você pode evoluir o workspace, registrar homologações, recompilar e validar sem reexportar a Base44.';
   card.classList.remove('hidden');
   $('repairPreview').classList.remove('hidden');
 
-  if (!lastResult) {
+  if (operationState?.result) {
+    lastResult = operationState.result;
+  } else if (!lastResult) {
     lastResult = {
       status: entry.status,
       project: entry.project,
@@ -39,7 +41,12 @@ function showCompletedOperation(entry) {
 async function refreshRepairAction() {
   try {
     const history = await call(window.rbBridge.migration.history());
-    showCompletedOperation(history.map(repairableHistoryEntry).find(Boolean) || null);
+    const entry = history.map(repairableHistoryEntry).find(Boolean) || null;
+    if (!entry) return showCompletedOperation(null);
+    let operationState = null;
+    try { operationState = await call(window.rbBridge.migration.operationState(entry.jobRoot)); }
+    catch (error) { log(`Relatório da operação: ${error.message}`); }
+    showCompletedOperation(entry, operationState);
   } catch {
     showCompletedOperation(null);
   }

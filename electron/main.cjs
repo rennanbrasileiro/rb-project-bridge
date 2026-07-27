@@ -18,6 +18,7 @@ const { PreviewRepairService } = require('./services/preview-repair-service.cjs'
 const { ArchiveService } = require('./services/archive-service.cjs');
 const { ReportService } = require('./services/report-service.cjs');
 const { MigrationService } = require('./services/migration-service.cjs');
+const { OperationControlService } = require('./services/operation-control-service.cjs');
 
 let mainWindow;
 let services;
@@ -41,7 +42,8 @@ function createServices() {
   const reports = new ReportService({ userDataDir, logger });
   const migration = new MigrationService({ base44, github, security, build, standalone, archive, reports, logger, emit });
   const previewRepair = new PreviewRepairService({ build, standalone, security, reports, logger, emit });
-  return { logger, toolchain, base44, github, security, build, standalone, preview, previewRepair, archive, reports, migration };
+  const operationControl = new OperationControlService({ reports, logger });
+  return { logger, toolchain, base44, github, security, build, standalone, preview, previewRepair, archive, reports, migration, operationControl };
 }
 
 function serializeError(error) { const normalized = asBridgeError(error); return { name: normalized.name, code: normalized.code, message: normalized.message, details: normalized.details }; }
@@ -83,6 +85,9 @@ function registerIpc() {
   handle('migration:cancel', () => { const migration = services.migration.cancel(); const repair = services.previewRepair.cancel(); return { cancelled: Boolean(migration.cancelled || repair.cancelled) }; });
   handle('migration:retry-publish', (jobRoot) => services.migration.retryPublish(validateJobRoot(jobRoot)));
   handle('migration:repair-preview', (jobRoot) => services.previewRepair.repair(validateJobRoot(jobRoot)));
+  handle('migration:operation-state', (jobRoot) => services.operationControl.getState(validateJobRoot(jobRoot)));
+  handle('migration:validation-save', (jobRoot, input) => services.operationControl.saveValidation(validateJobRoot(jobRoot), input));
+  handle('migration:package-regenerate', (jobRoot) => services.operationControl.regeneratePackage(validateJobRoot(jobRoot)));
   handle('migration:history', () => services.reports.getHistory()); handle('migration:history-clear', () => services.reports.clearHistory());
   handle('preview:start', (directory) => services.preview.start(directory)); handle('preview:stop', () => services.preview.stop()); handle('preview:status', () => services.preview.status());
 }
