@@ -1,8 +1,8 @@
 {
   "name": "rb-project-bridge",
-  "version": "0.4.0",
-  "description": "Desktop migration product for preserving Base44 applications, generating independent sandboxes and workspaces, assessing production readiness, and packaging a verifiable client handoff.",
-  "main": "electron/main.cjs",
+  "version": "0.4.1",
+  "description": "Desktop migration product for preserving Base44 applications, generating independent sandboxes and workspaces, assessing production readiness, packaging a verifiable client handoff, and publishing review branches with comparable Git history.",
+  "main": "electron/main-entry.cjs",
   "author": "RB HUB",
   "license": "UNLICENSED",
   "private": true,
@@ -11,7 +11,7 @@
     "start": "electron .",
     "dev": "electron .",
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs && node --check electron/services/github-service.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js && npm test",
+    "check": "node --check electron/main-entry.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs && node --check electron/services/github-service.cjs && node --check electron/patches/review-history-patch.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs && node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js && npm test",
     "dist:win": "electron-builder --win portable nsis",
     "dist:linux": "electron-builder --linux AppImage",
     "dist:dir": "electron-builder --dir"
