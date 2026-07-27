@@ -12,6 +12,11 @@ const {
   verifierSource,
   enhanceWorkspace,
 } = require('../electron/patches/functional-workspace-patch.cjs');
+const {
+  RUNTIME_GRANTS_MIGRATION,
+  applyRuntimeGrants,
+  runtimeGrantSql,
+} = require('../electron/patches/runtime-grants-patch.cjs');
 const { SourceAdapter, assertSourceAdapter } = require('../electron/sources/source-adapter.cjs');
 const { PlatformCapabilityService } = require('../electron/services/platform-capability-service.cjs');
 
@@ -47,6 +52,27 @@ test('functional workspace enhancement is idempotent and keeps one deterministic
   assert.deepEqual(files, [VERIFICATION_MIGRATION]);
   const packageJson = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['rb:verify'], 'node scripts/rb-verify-workspace.mjs');
+});
+
+test('runtime grants permit authenticated CRUD while RLS remains the row boundary', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rb-runtime-grants-'));
+  await fs.mkdir(path.join(root, 'supabase', 'migrations'), { recursive: true });
+  await writeJson(path.join(root, 'package.json'), { name: 'pilot', scripts: {} });
+  let report = await enhanceWorkspace(root, {
+    entities: [
+      { name: 'User', table: 'profiles' },
+      { name: 'Workout', table: 'workouts' },
+    ],
+  });
+  report = await applyRuntimeGrants(root, report);
+  const grants = await fs.readFile(path.join(root, 'supabase', 'migrations', RUNTIME_GRANTS_MIGRATION), 'utf8');
+  const verification = await fs.readFile(path.join(root, 'supabase', 'migrations', VERIFICATION_MIGRATION), 'utf8');
+  assert.match(grants, /grant select, update on table public\."profiles" to authenticated/);
+  assert.match(grants, /grant select, insert, update, delete on table public\."workouts" to authenticated/);
+  assert.match(verification, /grant select on table public\.rb_bridge_smoke to anon/);
+  assert.match(verification, /grant select, insert, update, delete on table public\.rb_bridge_smoke to authenticated/);
+  assert.equal(report.runtimeGrants.prepared, true);
+  assert.doesNotMatch(runtimeGrantSql([{ table: 'workouts' }]), /to anon/);
 });
 
 test('source adapter produces a normalized platform-neutral manifest', async () => {
