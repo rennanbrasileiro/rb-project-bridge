@@ -4,6 +4,15 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { BridgeError, asBridgeError } = require('../core/errors.cjs');
 const { readJson } = require('../core/fs-utils.cjs');
+const { appendVerification } = require('./verification-ledger-service.cjs');
+const { createDefect, openDefects } = require('./defect-service.cjs');
+
+function runtimeErrors(error) {
+  return error?.details?.runtime?.errors
+    || error?.details?.build?.runtime?.errors
+    || error?.details?.build?.errors
+    || [];
+}
 
 class PreviewRepairService {
   constructor({ build, standalone, security, reports, logger, emit }) {
@@ -18,6 +27,11 @@ class PreviewRepairService {
     return { cancelled: true };
   }
 
+  async persistAttempt(report, jobRoot, repositoryDir) {
+    if (repositoryDir) await this.reports.writeReport(repositoryDir, report, { skipArchive: true }).catch(() => null);
+    await this.reports.writeReport(jobRoot, report, { skipArchive: true }).catch(() => null);
+  }
+
   async repair(jobRoot) {
     if (this.running) throw new BridgeError('PREVIEW_REPAIR_RUNNING', 'Já existe uma reconstrução de preview em andamento.');
     const resolvedJobRoot = path.resolve(String(jobRoot || ''));
@@ -26,7 +40,10 @@ class PreviewRepairService {
     this.running = true;
     this.controller = new AbortController();
     const { signal } = this.controller;
+    const startedAt = new Date().toISOString();
     let report;
+    let repositoryDir = null;
+    let previewDir = null;
     try {
       report = await readJson(path.join(resolvedJobRoot, 'RB-BRIDGE-REPORT.json'));
       if (!report?.paths?.repositoryDir) {
@@ -36,8 +53,8 @@ class PreviewRepairService {
         throw new BridgeError('PREVIEW_REPAIR_NOT_AVAILABLE', 'Somente operações standalone Supabase possuem preview reconstruível.');
       }
 
-      const repositoryDir = path.resolve(report.paths.repositoryDir);
-      const previewDir = path.resolve(report.paths.previewDir || path.join(resolvedJobRoot, 'preview'));
+      repositoryDir = path.resolve(report.paths.repositoryDir);
+      previewDir = path.resolve(report.paths.previewDir || path.join(resolvedJobRoot, 'preview'));
       for (const target of [repositoryDir, previewDir]) {
         if (target !== resolvedJobRoot && !target.startsWith(`${resolvedJobRoot}${path.sep}`)) {
           throw new BridgeError('UNSAFE_PREVIEW_REPAIR_PATH', 'O relatório aponta para fora da pasta da operação.');
@@ -81,17 +98,21 @@ class PreviewRepairService {
       report.standaloneGateAfterPreviewRepair = standaloneGate;
       report.build = build;
       report.securityAfterPreviewRepair = security;
+      appendVerification(report, { gate: 'standalone', status: standaloneGate.passed ? 'passed' : 'failed', source: 'preview-repair', startedAt, finishedAt: repairedAt, summary: standaloneGate.passed ? 'Gate standalone aprovado.' : 'Gate standalone reprovado.' });
+      appendVerification(report, { gate: 'build', status: 'passed', source: 'preview-repair', startedAt, finishedAt: repairedAt, summary: 'Build demo recompilado com sucesso.', artifacts: { previewDir } });
+      appendVerification(report, { gate: 'runtime', status: 'passed', source: 'preview-repair', startedAt, finishedAt: repairedAt, summary: 'Aplicação montou conteúdo em Chromium.', evidence: build.runtime?.evidence || [], artifacts: { previewDir } });
+      appendVerification(report, { gate: 'security', status: 'passed', source: 'preview-repair', startedAt, finishedAt: repairedAt, summary: 'Nenhum segredo bloqueante após a reconstrução.' });
       report.previewRepair = {
         status: 'completed',
         repairedAt,
         published: false,
         message: 'Preview reconstruído localmente sem reexportar a Base44 e sem alterar o GitHub.',
       };
+      report.packageState = { ...(report.packageState || {}), dirty: true, lastValidationAt: repairedAt };
       report.notes = Array.isArray(report.notes) ? report.notes : [];
       report.notes.push(`Preview reconstruído e validado em ${repairedAt}; nenhuma publicação GitHub foi executada.`);
 
-      await this.reports.writeReport(repositoryDir, report);
-      await this.reports.writeReport(resolvedJobRoot, report);
+      await this.persistAttempt(report, resolvedJobRoot, repositoryDir);
       await this.reports.appendHistory({
         jobId: report.jobId,
         status: report.status || 'completed',
@@ -104,6 +125,7 @@ class PreviewRepairService {
         jobRoot: resolvedJobRoot,
         previewDir,
         previewRepaired: true,
+        verificationStatus: 'passed',
       });
 
       this.logger.info('preview.repair.completed', { jobRoot: resolvedJobRoot, previewDir, repairedAt });
@@ -115,6 +137,71 @@ class PreviewRepairService {
       return report;
     } catch (error) {
       const bridgeError = asBridgeError(error, 'PREVIEW_REPAIR_FAILED');
+      const failedAt = new Date().toISOString();
+      if (report) {
+        const failedBuild = bridgeError.details?.build || null;
+        const errors = runtimeErrors(bridgeError).map(String);
+        if (failedBuild) report.latestFailedBuild = failedBuild;
+        appendVerification(report, {
+          gate: 'build',
+          status: failedBuild?.status === 'passed' ? 'passed' : 'failed',
+          source: 'preview-repair',
+          startedAt,
+          finishedAt: failedAt,
+          summary: failedBuild?.status === 'passed' ? 'Build recompilado; runtime ainda reprovado.' : bridgeError.message,
+          errors,
+          artifacts: { previewDir },
+        });
+        appendVerification(report, {
+          gate: 'runtime',
+          status: 'failed',
+          source: 'preview-repair',
+          startedAt,
+          finishedAt: failedAt,
+          summary: bridgeError.message,
+          errors: errors.length ? errors : [bridgeError.message],
+          artifacts: { previewDir },
+        });
+        report.previewRepair = {
+          status: 'failed',
+          repairedAt: failedAt,
+          published: false,
+          code: bridgeError.code,
+          message: bridgeError.message,
+          errors,
+        };
+        report.packageState = { ...(report.packageState || {}), dirty: true, lastValidationAt: failedAt };
+        if (!openDefects(report, { gate: 'runtime' }).some((item) => item.observed === bridgeError.message)) {
+          createDefect(report, {
+            gate: 'runtime',
+            title: 'Preview não renderiza após reconstrução',
+            severity: 'critical',
+            expected: 'A aplicação deve montar conteúdo no elemento #root e permanecer navegável sem erro fatal.',
+            observed: bridgeError.message,
+            reproductionSteps: 'Abrir a operação concluída e executar “Recriar e validar preview”.',
+            evidence: errors.join('\n'),
+            owner: report.options?.deliveryOwner || null,
+          });
+        }
+        report.notes = Array.isArray(report.notes) ? report.notes : [];
+        report.notes.push(`Revalidação reprovada em ${failedAt}; a evidência anterior de runtime foi invalidada.`);
+        await this.persistAttempt(report, resolvedJobRoot, repositoryDir);
+        await this.reports.appendHistory({
+          jobId: report.jobId,
+          status: 'failed',
+          checkpoint: report.checkpoint,
+          startedAt: report.startedAt,
+          finishedAt: failedAt,
+          project: report.project,
+          github: report.github,
+          githubRepository: report.githubRepository,
+          jobRoot: resolvedJobRoot,
+          previewDir,
+          previewRepaired: false,
+          verificationStatus: 'failed',
+          error: { code: bridgeError.code, message: bridgeError.message, errors },
+        }).catch(() => null);
+      }
       this.emit('migration:progress', { step: 'build', status: 'failed', message: bridgeError.message, code: bridgeError.code });
       throw bridgeError;
     } finally {

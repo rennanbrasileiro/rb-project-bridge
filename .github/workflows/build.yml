@@ -21,21 +21,57 @@ jobs:
       - run: npm install --no-audit --no-fund --loglevel=error
       - name: Validate Electron core syntax
         run: node --check electron/main-entry.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs
-      - name: Validate migration service syntax
-        run: node --check electron/services/github-service.cjs && node --check electron/patches/review-history-patch.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs
-      - name: Validate reporting, operation control and handoff syntax
-        run: node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/operation-summary-service.cjs && node --check electron/services/operation-control-service.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs
+      - name: Validate patches and migration syntax
+        run: node --check electron/patches/review-history-patch.cjs && node --check electron/patches/verification-integrity-patch.cjs && node --check electron/patches/functional-workspace-patch.cjs && node --check electron/patches/runtime-grants-patch.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs
+      - name: Validate verification and control services syntax
+        run: node --check electron/services/verification-ledger-service.cjs && node --check electron/services/defect-service.cjs && node --check electron/services/functional-verification-service.cjs && node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/operation-summary-service.cjs && node --check electron/services/operation-control-service.cjs
+      - name: Validate adapters and reporting syntax
+        run: node --check electron/services/platform-capability-service.cjs && node --check electron/sources/source-adapter.cjs && node --check electron/sources/base44-source-adapter.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs && node --check electron/services/github-service.cjs
       - name: Validate renderer syntax
-        run: node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js && node --check renderer/operation-decision-ui.js
-      - name: Validate runtime compatibility, readiness and guided closure
-        run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs tests/delivery-package.test.cjs tests/review-history-patch.test.cjs tests/operation-summary.test.cjs
-      - name: Rebuild completed preview
-        run: node --test tests/preview-repair.test.cjs
+        run: node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js && node --check renderer/operation-decision-ui.js && node --check renderer/functional-verification-ui.js
+      - name: Validate FitHub integrity and functional portability regressions
+        run: node --test tests/functional-portability.test.cjs tests/preview-repair.test.cjs tests/review-history-patch.test.cjs
+      - name: Validate runtime compatibility regressions
+        run: node --test tests/runtime-compatibility.test.cjs
+      - name: Validate readiness regressions
+        run: node --test tests/readiness.test.cjs
+      - name: Validate delivery package regressions
+        run: node --test tests/delivery-package.test.cjs
+      - name: Validate operation summary regressions
+        run: node --test tests/operation-summary.test.cjs
       - name: Run complete suite
         run: npm test
 
-  windows:
+  functional-smoke:
     needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - name: Run generated verifier against real Supabase Docker services
+        id: functional_smoke
+        continue-on-error: true
+        run: node tests/run-supabase-functional-smoke.cjs
+      - name: Upload functional smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-smoke-diagnostics
+          path: artifacts/functional-smoke/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce functional smoke result
+        if: steps.functional_smoke.outcome != 'success'
+        run: |
+          echo 'The generated Supabase verifier failed. Download functional-smoke-diagnostics for the exact step and error.'
+          exit 1
+
+  windows:
+    needs: [validate, functional-smoke]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +90,7 @@ jobs:
           $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
           $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
           $env:RB_BRIDGE_SMOKE_MARKER = $marker
-          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.5.0-x64.exe') -Wait -PassThru
+          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.6.0-x64.exe') -Wait -PassThru
           if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
           $proof = Get-Content $marker -Raw | ConvertFrom-Json
           if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
@@ -67,21 +103,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.5.0
+          name: rb-project-bridge-windows-0.6.0
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.5.0 RC1 release
+      - name: Publish 0.6.0 RC1 release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.5.0-rc1
+          tag_name: v0.6.0-rc1
           target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.5.0 RC1
+          name: RB Project Bridge 0.6.0 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.5.0-x64.exe
-            release/RB-Project-Bridge-Portable-0.5.0-x64.exe
+            release/RB-Project-Bridge-Setup-0.6.0-x64.exe
+            release/RB-Project-Bridge-Portable-0.6.0-x64.exe
             release/SHA256SUMS.txt
