@@ -52,7 +52,7 @@ function handle(channel, action) { ipcMain.handle(channel, async (_event, ...arg
 function validateMigrationInput(input) {
   if (!input || typeof input !== 'object') throw new BridgeError('INVALID_INPUT', 'Os dados da operação são obrigatórios.');
   if (!input.acceptedAuthorization) throw new BridgeError('AUTHORIZATION_REQUIRED', 'Confirme que o proprietário autorizou esta operação.');
-  if (!input.project?.id || !input.project?.name) throw new BridgeError('PROJECT_REQUIRED', 'Selecione um projeto Base44.');
+  if (!input.project?.id || !input.project?.name) throw new BridgeError('PROJECT_REQUIRED', 'Selecione um projeto da origem.');
   if (!input.outputDirectory || typeof input.outputDirectory !== 'string') throw new BridgeError('OUTPUT_DIRECTORY_REQUIRED', 'Selecione uma pasta de entrega.');
   const repo = input.repository;
   if (!repo?.owner || !repo?.ownerType) throw new BridgeError('GITHUB_OWNER_REQUIRED', 'Selecione uma conta ou organização GitHub.');
@@ -67,10 +67,13 @@ function validateMigrationInput(input) {
   input.buildValidation = input.deliveryMode === 'standalone-supabase' ? true : Boolean(input.buildValidation);
   return input;
 }
-
 function validateJobRoot(jobRoot) {
   if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'É necessária uma pasta de operação válida.');
   return jobRoot;
+}
+function validateDefectId(defectId) {
+  if (typeof defectId !== 'string' || !/^RB-[A-Z0-9-]{4,}$/i.test(defectId)) throw new BridgeError('INVALID_DEFECT_ID', 'Identificador de defeito inválido.');
+  return defectId;
 }
 
 function registerIpc() {
@@ -87,6 +90,8 @@ function registerIpc() {
   handle('migration:repair-preview', (jobRoot) => services.previewRepair.repair(validateJobRoot(jobRoot)));
   handle('migration:operation-state', (jobRoot) => services.operationControl.getState(validateJobRoot(jobRoot)));
   handle('migration:validation-save', (jobRoot, input) => services.operationControl.saveValidation(validateJobRoot(jobRoot), input));
+  handle('migration:defect-update', (jobRoot, defectId, input) => services.operationControl.updateDefect(validateJobRoot(jobRoot), validateDefectId(defectId), input));
+  handle('migration:defect-retest', (jobRoot, defectId, input) => services.operationControl.retestDefect(validateJobRoot(jobRoot), validateDefectId(defectId), input));
   handle('migration:package-regenerate', (jobRoot) => services.operationControl.regeneratePackage(validateJobRoot(jobRoot)));
   handle('migration:history', () => services.reports.getHistory()); handle('migration:history-clear', () => services.reports.clearHistory());
   handle('preview:start', (directory) => services.preview.start(directory)); handle('preview:stop', () => services.preview.stop()); handle('preview:status', () => services.preview.status());
