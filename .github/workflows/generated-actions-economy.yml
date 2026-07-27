@@ -32,9 +32,10 @@ jobs:
 
           source = Path("electron/services/standalone-service.cjs")
           text = source.read_text(encoding="utf-8")
-          marker = "Upload local preview only when requested manually"
+          good_node_block = r"with:\n          node-version: 22\n          cache: npm"
+          good_artifact_block = r"with:\n          name: local-preview\n          path: dist"
 
-          if marker in text:
+          if good_node_block in text and good_artifact_block in text:
               with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                   output.write("changed=false\n")
               raise SystemExit(0)
@@ -109,12 +110,12 @@ jobs:
                     if-no-files-found: error
                     retention-days: 3
           """
-          generated_yaml = "\n".join(
-              line[10:] if line.startswith("          ") else line
-              for line in generated_yaml.splitlines()
-          ).strip() + "\n"
+          generated_yaml = generated_yaml.strip() + "\n"
           generated_yaml = generated_yaml.replace(
               "__GITHUB_REF__", "$" + "{{ github.ref }}"
+          )
+          Path("/tmp/generated-validate.yml").write_text(
+              generated_yaml, encoding="utf-8"
           )
 
           escaped = (
@@ -136,6 +137,10 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write("changed=true\n")
           PY
+
+      - name: Validate generated workflow YAML
+        if: steps.patch.outputs.changed == 'true'
+        run: ruby -e 'require "yaml"; YAML.load_file("/tmp/generated-validate.yml")'
 
       - name: Validate patched source
         run: |
