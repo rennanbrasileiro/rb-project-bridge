@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { enhanceWorkspace } = require('../electron/patches/functional-workspace-patch.cjs');
+const { applyRuntimeGrants } = require('../electron/patches/runtime-grants-patch.cjs');
 const { writeJson, readJson } = require('../electron/core/fs-utils.cjs');
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
@@ -82,7 +83,8 @@ alter table public.profiles enable row level security;
 create policy profiles_select_own on public.profiles for select to authenticated using (id = auth.uid());
 create policy profiles_update_own on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 `, 'utf8');
-    await enhanceWorkspace(root, { entities: [{ name: 'User', table: 'profiles' }] });
+    let workspaceReport = await enhanceWorkspace(root, { entities: [{ name: 'User', table: 'profiles' }] });
+    workspaceReport = await applyRuntimeGrants(root, workspaceReport);
     run(npm, ['install', '--no-audit', '--no-fund', '--loglevel=error'], root, { timeout: 360000 });
     verificationProcess = run(npm, ['run', 'rb:verify'], root, { timeout: 15 * 60 * 1000 });
     const result = await readJson(path.join(root, 'RB-FUNCTIONAL-VERIFICATION.json'), null);
