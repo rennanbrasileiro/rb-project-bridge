@@ -1,0 +1,152 @@
+name: Enforce generated Actions economy policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/generated-actions-economy.yml"
+      - "electron/services/standalone-service.cjs"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generated-actions-economy-main
+  cancel-in-progress: true
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch generated private-project workflow
+        id: patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          source = Path("electron/services/standalone-service.cjs")
+          text = source.read_text(encoding="utf-8")
+          marker = "Upload local preview only when requested manually"
+
+          if marker in text:
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("changed=false\n")
+              raise SystemExit(0)
+
+          pattern = re.compile(
+              r"function workflowSource\(\) \{\n"
+              r"  return `name: Validate standalone application\\n.*?`;\n"
+              r"\}",
+              re.S,
+          )
+          if len(pattern.findall(text)) != 1:
+              raise SystemExit("workflowSource block not found exactly once")
+
+          generated_yaml = """name: Validate standalone application
+
+          on:
+            push:
+              branches: [main]
+              paths-ignore:
+                - "**/*.md"
+                - "docs/**"
+            pull_request:
+              branches: [main]
+              types: [opened, synchronize, reopened]
+              paths-ignore:
+                - "**/*.md"
+                - "docs/**"
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          concurrency:
+            group: standalone-__GITHUB_REF__
+            cancel-in-progress: true
+
+          jobs:
+            validate:
+              runs-on: ubuntu-24.04
+              timeout-minutes: 15
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@v4
+
+                - name: Set up Node.js
+                  uses: actions/setup-node@v4
+                  with:
+                    node-version: 22
+                    cache: npm
+
+                - name: Install dependencies
+                  run: npm ci --ignore-scripts --no-audit --no-fund
+
+                - name: Verify standalone gate
+                  run: npm run check:standalone
+
+                - name: Lint
+                  run: npm run lint --if-present
+
+                - name: Typecheck
+                  run: npm run typecheck --if-present
+
+                - name: Build demo
+                  run: npm run build:demo
+
+                - name: Upload local preview only when requested manually
+                  if: github.event_name == 'workflow_dispatch'
+                  uses: actions/upload-artifact@v4
+                  with:
+                    name: local-preview
+                    path: dist
+                    if-no-files-found: error
+                    retention-days: 3
+          """
+          generated_yaml = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in generated_yaml.splitlines()
+          ).strip() + "\n"
+          generated_yaml = generated_yaml.replace(
+              "__GITHUB_REF__", "$" + "{{ github.ref }}"
+          )
+
+          escaped = (
+              generated_yaml
+              .replace("\\", "\\\\")
+              .replace("`", "\\`")
+              .replace("${", "\\${")
+              .replace("\n", "\\n")
+          )
+          replacement = (
+              "function workflowSource() {\n"
+              f"  return `{escaped}`;\n"
+              "}"
+          )
+          source.write_text(
+              pattern.sub(lambda _: replacement, text),
+              encoding="utf-8",
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("changed=true\n")
+          PY
+
+      - name: Validate patched source
+        run: |
+          node --check electron/services/standalone-service.cjs
+          node --test tests/standalone.test.cjs
+
+      - name: Commit policy correction
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add electron/services/standalone-service.cjs
+          git commit -m "chore(actions): gerar CI econômico em projetos privados"
+          git push
