@@ -15,6 +15,7 @@ const { BuildService } = require('./services/build-service.cjs');
 const { StandaloneService } = require('./services/standalone-service.cjs');
 const { PreviewService } = require('./services/preview-service.cjs');
 const { PreviewRepairService } = require('./services/preview-repair-service.cjs');
+const { FunctionalVerificationService } = require('./services/functional-verification-service.cjs');
 const { ArchiveService } = require('./services/archive-service.cjs');
 const { ReportService } = require('./services/report-service.cjs');
 const { MigrationService } = require('./services/migration-service.cjs');
@@ -42,13 +43,13 @@ function createServices() {
   const reports = new ReportService({ userDataDir, logger });
   const migration = new MigrationService({ base44, github, security, build, standalone, archive, reports, logger, emit });
   const previewRepair = new PreviewRepairService({ build, standalone, security, reports, logger, emit });
+  const functionalVerification = new FunctionalVerificationService({ reports, logger, emit });
   const operationControl = new OperationControlService({ reports, logger });
-  return { logger, toolchain, base44, github, security, build, standalone, preview, previewRepair, archive, reports, migration, operationControl };
+  return { logger, toolchain, base44, github, security, build, standalone, preview, previewRepair, functionalVerification, archive, reports, migration, operationControl };
 }
 
 function serializeError(error) { const normalized = asBridgeError(error); return { name: normalized.name, code: normalized.code, message: normalized.message, details: normalized.details }; }
 function handle(channel, action) { ipcMain.handle(channel, async (_event, ...args) => { try { return { ok: true, data: await action(...args) }; } catch (error) { services?.logger?.error('ipc.error', { channel, error: serializeError(error) }); return { ok: false, error: serializeError(error) }; } }); }
-
 function validateMigrationInput(input) {
   if (!input || typeof input !== 'object') throw new BridgeError('INVALID_INPUT', 'Os dados da operação são obrigatórios.');
   if (!input.acceptedAuthorization) throw new BridgeError('AUTHORIZATION_REQUIRED', 'Confirme que o proprietário autorizou esta operação.');
@@ -67,14 +68,8 @@ function validateMigrationInput(input) {
   input.buildValidation = input.deliveryMode === 'standalone-supabase' ? true : Boolean(input.buildValidation);
   return input;
 }
-function validateJobRoot(jobRoot) {
-  if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'É necessária uma pasta de operação válida.');
-  return jobRoot;
-}
-function validateDefectId(defectId) {
-  if (typeof defectId !== 'string' || !/^RB-[A-Z0-9-]{4,}$/i.test(defectId)) throw new BridgeError('INVALID_DEFECT_ID', 'Identificador de defeito inválido.');
-  return defectId;
-}
+function validateJobRoot(jobRoot) { if (typeof jobRoot !== 'string' || !path.isAbsolute(jobRoot)) throw new BridgeError('INVALID_PATH', 'É necessária uma pasta de operação válida.'); return jobRoot; }
+function validateDefectId(defectId) { if (typeof defectId !== 'string' || !/^RB-[A-Z0-9-]{4,}$/i.test(defectId)) throw new BridgeError('INVALID_DEFECT_ID', 'Identificador de defeito inválido.'); return defectId; }
 
 function registerIpc() {
   handle('system:status', async () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch, userData: app.getPath('userData'), toolchain: await services.toolchain.status(), base44: await services.base44.whoami(), github: await services.github.authStatus(), preview: services.preview.status() }));
@@ -85,9 +80,10 @@ function registerIpc() {
   handle('github:status', () => services.github.authStatus()); handle('github:login', () => services.github.login()); handle('github:logout', () => services.github.logout()); handle('github:accounts', () => services.github.getAccounts()); handle('github:ensure-delivery-scopes', () => services.github.ensureDeliveryScopes()); handle('github:repositories', (owner, ownerType) => services.github.listRepositories(owner, ownerType)); handle('github:source-status', (input) => services.github.inspectSourceStatus(input));
   handle('delivery:set-context', (input) => setDeliveryContext(input));
   handle('migration:start', (input) => services.migration.migrate(validateMigrationInput(input)));
-  handle('migration:cancel', () => { const migration = services.migration.cancel(); const repair = services.previewRepair.cancel(); return { cancelled: Boolean(migration.cancelled || repair.cancelled) }; });
+  handle('migration:cancel', () => { const migration = services.migration.cancel(); const repair = services.previewRepair.cancel(); const functional = services.functionalVerification.cancel(); return { cancelled: Boolean(migration.cancelled || repair.cancelled || functional.cancelled) }; });
   handle('migration:retry-publish', (jobRoot) => services.migration.retryPublish(validateJobRoot(jobRoot)));
   handle('migration:repair-preview', (jobRoot) => services.previewRepair.repair(validateJobRoot(jobRoot)));
+  handle('migration:functional-verify', async (jobRoot) => { const validated = validateJobRoot(jobRoot); await services.functionalVerification.verify(validated); return services.operationControl.getState(validated); });
   handle('migration:operation-state', (jobRoot) => services.operationControl.getState(validateJobRoot(jobRoot)));
   handle('migration:validation-save', (jobRoot, input) => services.operationControl.saveValidation(validateJobRoot(jobRoot), input));
   handle('migration:defect-update', (jobRoot, defectId, input) => services.operationControl.updateDefect(validateJobRoot(jobRoot), validateDefectId(defectId), input));
@@ -96,20 +92,17 @@ function registerIpc() {
   handle('migration:history', () => services.reports.getHistory()); handle('migration:history-clear', () => services.reports.clearHistory());
   handle('preview:start', (directory) => services.preview.start(directory)); handle('preview:stop', () => services.preview.stop()); handle('preview:status', () => services.preview.status());
 }
-
 function createWindow() {
   mainWindow = new BrowserWindow({ width: 1280, height: 900, minWidth: 1040, minHeight: 720, backgroundColor: '#071018', title: 'RB Project Bridge', show: false, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
   mainWindow.removeMenu(); mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html')); mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   mainWindow.webContents.on('will-navigate', (event, url) => { if (url !== mainWindow.webContents.getURL()) event.preventDefault(); });
 }
-
 async function runBase44Smoke() {
   services = createServices(); const markerPath = process.env.RB_BRIDGE_SMOKE_MARKER;
   try { const device = await services.base44.requestDeviceCode(); if (!device.userCode || !device.verificationUri || !device.deviceCode) throw new Error('A Base44 não retornou o fluxo OAuth esperado.'); if (markerPath) await fsp.writeFile(markerPath, JSON.stringify({ ok: true, userCode: device.userCode, verificationUri: device.verificationUri }), 'utf8'); app.exit(0); }
   catch (error) { if (markerPath) await fsp.writeFile(markerPath, JSON.stringify({ ok: false, error: error.message }), 'utf8').catch(() => null); process.stderr.write(`${error.stack || error.message}\n`); app.exit(1); }
 }
-
 app.whenReady().then(() => { if (base44SmokeMode) return runBase44Smoke(); services = createServices(); registerIpc(); createWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); }); });
 app.on('window-all-closed', async () => { if (!base44SmokeMode) await services?.preview?.stop().catch(() => null); if (!base44SmokeMode && process.platform !== 'darwin') app.quit(); });
 process.on('uncaughtException', (error) => services?.logger?.error('process.uncaughtException', { message: error.message, stack: error.stack }));
