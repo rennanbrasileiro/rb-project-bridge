@@ -14,20 +14,51 @@ function severityFor(stepId) {
   if (String(stepId).startsWith('crud-')) return 'high';
   return 'medium';
 }
+function terminateProcessTree(child) {
+  if (!child?.pid || child.killed) return false;
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
+    killer.unref();
+  } else {
+    child.kill('SIGTERM');
+  }
+  return true;
+}
 function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: options.cwd, env: options.env || process.env, windowsHide: true, shell: false });
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env || process.env,
+      windowsHide: true,
+      shell: false,
+    });
+    options.onSpawn?.(child);
     let stdout = '';
     let stderr = '';
+    let settled = false;
     const limit = 2 * 1024 * 1024;
+    const finish = (action) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      action();
+    };
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new BridgeError('FUNCTIONAL_VERIFICATION_TIMEOUT', 'Os testes funcionais excederam o limite de execução.'));
+      terminateProcessTree(child);
+      finish(() => reject(new BridgeError('FUNCTIONAL_VERIFICATION_TIMEOUT', 'Os testes funcionais excederam o limite de execução.')));
     }, options.timeout || 12 * 60 * 1000);
-    child.stdout.on('data', (chunk) => { const text = chunk.toString(); stdout = (stdout + text).slice(-limit); options.onOutput?.(text); });
-    child.stderr.on('data', (chunk) => { const text = chunk.toString(); stderr = (stderr + text).slice(-limit); options.onOutput?.(text); });
-    child.on('error', (error) => { clearTimeout(timer); reject(error); });
-    child.on('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal, stdout, stderr }); });
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout = (stdout + text).slice(-limit);
+      options.onOutput?.(text);
+    });
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderr = (stderr + text).slice(-limit);
+      options.onOutput?.(text);
+    });
+    child.on('error', (error) => finish(() => reject(error)));
+    child.on('close', (code, signal) => finish(() => resolve({ code, signal, stdout, stderr })));
   });
 }
 
@@ -36,12 +67,13 @@ class FunctionalVerificationService {
     Object.assign(this, { reports, logger, emit });
     this.running = false;
     this.child = null;
+    this.cancelled = false;
   }
 
   cancel() {
     if (!this.running || !this.child) return { cancelled: false };
-    this.child.kill('SIGTERM');
-    return { cancelled: true };
+    this.cancelled = true;
+    return { cancelled: terminateProcessTree(this.child) };
   }
 
   async persist(report, root, repositoryDir) {
@@ -62,6 +94,7 @@ class FunctionalVerificationService {
     await fs.rm(resultPath, { force: true }).catch(() => null);
     const startedAt = new Date().toISOString();
     this.running = true;
+    this.cancelled = false;
     this.emit('migration:progress', { step: 'workspace', status: 'running', message: 'Iniciando Supabase local e testando migrations, autenticação, CRUD e RLS...' });
     this.logger?.info('functional.verification.start', { jobRoot: root, repositoryDir });
 
@@ -70,7 +103,9 @@ class FunctionalVerificationService {
         cwd: repositoryDir,
         timeout: 12 * 60 * 1000,
         onOutput: (text) => this.emit('build:output', { text }),
+        onSpawn: (child) => { this.child = child; },
       });
+      if (this.cancelled) throw new BridgeError('FUNCTIONAL_VERIFICATION_CANCELLED', 'A verificação funcional foi cancelada.');
       const result = await readJson(resultPath, null);
       if (!result) throw new BridgeError('FUNCTIONAL_VERIFICATION_RESULT_MISSING', 'O verificador terminou sem gerar RB-FUNCTIONAL-VERIFICATION.json.', { processResult });
       const overallPassed = processResult.code === 0 && result.status === 'passed';
@@ -124,8 +159,9 @@ class FunctionalVerificationService {
           });
         }
       }
-      if (overallPassed) resolveGateDefects(report, 'workspace', { evidence: resultPath, notes: 'Workspace aprovado pelo verificador automático.', executor: 'automation' });
-      else if (!openDefects(report, { gate: 'workspace' }).length) {
+      if (overallPassed) {
+        resolveGateDefects(report, 'workspace', { evidence: resultPath, notes: 'Workspace aprovado pelo verificador automático.', executor: 'automation' });
+      } else if (!openDefects(report, { gate: 'workspace' }).length) {
         createDefect(report, {
           gate: 'workspace',
           title: 'Workspace funcional reprovado',
@@ -152,7 +188,11 @@ class FunctionalVerificationService {
         previewDir: report.paths?.previewDir,
         functionalVerification: overallPassed ? 'passed' : 'failed',
       }).catch(() => null);
-      this.emit('migration:progress', { step: 'workspace', status: overallPassed ? 'complete' : 'failed', message: overallPassed ? 'Banco, login, profiles, CRUD e RLS aprovados.' : 'Os testes funcionais identificaram defeitos que precisam de correção.' });
+      this.emit('migration:progress', {
+        step: 'workspace',
+        status: overallPassed ? 'complete' : 'failed',
+        message: overallPassed ? 'Banco, login, profiles, CRUD e RLS aprovados.' : 'Os testes funcionais identificaram defeitos que precisam de correção.',
+      });
       this.logger?.info('functional.verification.complete', { jobRoot: root, status: result.status, steps: result.steps?.length || 0 });
       if (!overallPassed) throw new BridgeError('FUNCTIONAL_VERIFICATION_FAILED', 'O workspace não passou nos testes funcionais. Consulte os defeitos e o resultado gerado.', { result, resultPath });
       return report;
@@ -163,8 +203,14 @@ class FunctionalVerificationService {
     } finally {
       this.running = false;
       this.child = null;
+      this.cancelled = false;
     }
   }
 }
 
-module.exports = { FunctionalVerificationService, runProcess, severityFor };
+module.exports = {
+  FunctionalVerificationService,
+  runProcess,
+  severityFor,
+  terminateProcessTree,
+};
