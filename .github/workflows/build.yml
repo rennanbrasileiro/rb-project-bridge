@@ -19,12 +19,14 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
-      - name: Validate complete application syntax and suite
-        run: npm run check
+      - name: Validate application syntax
+        run: npm run check:syntax
       - name: Validate FitHub integrity and functional portability regressions
         run: node --test tests/functional-portability.test.cjs tests/preview-repair.test.cjs tests/review-history-patch.test.cjs
       - name: Validate runtime, readiness and client handoff regressions
         run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs tests/delivery-package.test.cjs tests/operation-summary.test.cjs
+      - name: Run remaining suite
+        run: npm test
 
   windows:
     needs: validate
