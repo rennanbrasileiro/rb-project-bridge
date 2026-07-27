@@ -20,15 +20,15 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund --loglevel=error
       - name: Validate Electron core syntax
-        run: node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs
+        run: node --check electron/main-entry.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/core/delivery-context.cjs
       - name: Validate migration service syntax
-        run: node --check electron/services/github-service.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs
+        run: node --check electron/services/github-service.cjs && node --check electron/patches/review-history-patch.cjs && node --check electron/services/migration-service.cjs && node --check electron/services/standalone-service.cjs && node --check electron/services/runtime-compatibility-service.cjs && node --check electron/services/preview-service.cjs && node --check electron/services/preview-repair-service.cjs
       - name: Validate reporting and handoff syntax
         run: node --check electron/services/readiness-service.cjs && node --check electron/services/delivery-package-service.cjs && node --check electron/services/client-archive-service.cjs && node --check electron/services/report-service.cjs
       - name: Validate renderer syntax
         run: node --check renderer/app.js && node --check renderer/repair-preview.js && node --check renderer/readiness-ui.js && node --check renderer/delivery-ui.js
       - name: Validate runtime compatibility, readiness and client handoff
-        run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs tests/delivery-package.test.cjs
+        run: node --test tests/runtime-compatibility.test.cjs tests/readiness.test.cjs tests/delivery-package.test.cjs tests/review-history-patch.test.cjs
       - name: Rebuild completed preview
         run: node --test tests/preview-repair.test.cjs
       - name: Run complete suite
@@ -54,7 +54,7 @@ jobs:
           $env:RB_BRIDGE_SMOKE_BASE44_OAUTH = '1'
           $marker = Join-Path $env:RUNNER_TEMP 'base44-oauth.json'
           $env:RB_BRIDGE_SMOKE_MARKER = $marker
-          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.4.0-x64.exe') -Wait -PassThru
+          $process = Start-Process -FilePath (Resolve-Path 'release/RB-Project-Bridge-Portable-0.4.1-x64.exe') -Wait -PassThru
           if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) { throw 'Packaged OAuth smoke failed.' }
           $proof = Get-Content $marker -Raw | ConvertFrom-Json
           if (-not $proof.ok -or -not $proof.userCode -or $proof.verificationUri -notmatch '^https://([^/]+\.)?base44\.com/') { throw 'Invalid Base44 OAuth proof.' }
@@ -67,21 +67,21 @@ jobs:
           } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: rb-project-bridge-windows-0.4.0
+          name: rb-project-bridge-windows-0.4.1
           path: release/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish 0.4.0 RC1 release
+      - name: Publish 0.4.1 RC1 release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.4.0-rc1
+          tag_name: v0.4.1-rc1
           target_commitish: ${{ github.sha }}
-          name: RB Project Bridge 0.4.0 RC1
+          name: RB Project Bridge 0.4.1 RC1
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/RB-Project-Bridge-Setup-0.4.0-x64.exe
-            release/RB-Project-Bridge-Portable-0.4.0-x64.exe
+            release/RB-Project-Bridge-Setup-0.4.1-x64.exe
+            release/RB-Project-Bridge-Portable-0.4.1-x64.exe
             release/SHA256SUMS.txt
