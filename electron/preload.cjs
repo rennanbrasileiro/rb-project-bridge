@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('rbBridge', {
     cancel: () => ipcRenderer.invoke('migration:cancel'),
     retryPublish: (jobRoot) => ipcRenderer.invoke('migration:retry-publish', jobRoot),
     repairPreview: (jobRoot) => ipcRenderer.invoke('migration:repair-preview', jobRoot),
+    verifyWorkspace: (jobRoot) => ipcRenderer.invoke('migration:functional-verify', jobRoot),
     operationState: (jobRoot) => ipcRenderer.invoke('migration:operation-state', jobRoot),
     saveValidation: (jobRoot, input) => ipcRenderer.invoke('migration:validation-save', jobRoot, input),
     updateDefect: (jobRoot, defectId, input) => ipcRenderer.invoke('migration:defect-update', jobRoot, defectId, input),
