@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('rbBridge', {
     repairPreview: (jobRoot) => ipcRenderer.invoke('migration:repair-preview', jobRoot),
     operationState: (jobRoot) => ipcRenderer.invoke('migration:operation-state', jobRoot),
     saveValidation: (jobRoot, input) => ipcRenderer.invoke('migration:validation-save', jobRoot, input),
+    updateDefect: (jobRoot, defectId, input) => ipcRenderer.invoke('migration:defect-update', jobRoot, defectId, input),
+    retestDefect: (jobRoot, defectId, input) => ipcRenderer.invoke('migration:defect-retest', jobRoot, defectId, input),
     regeneratePackage: (jobRoot) => ipcRenderer.invoke('migration:package-regenerate', jobRoot),
     history: () => ipcRenderer.invoke('migration:history'),
     clearHistory: () => ipcRenderer.invoke('migration:history-clear'),
