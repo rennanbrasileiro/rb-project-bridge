@@ -8,87 +8,46 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="delivery-ui.css">
   <link rel="stylesheet" href="operation-decision-ui.css">
+  <link rel="stylesheet" href="operation-defect-ui.css">
 </head>
 <body>
   <main>
-    <header><img src="../assets/icon.png" alt=""><div><h1>RB Project Bridge</h1><p>Base44 → aplicação independente → validação → entrega segura</p></div><span id="version" class="badge"></span></header>
-
-    <section id="operationSummary" class="summary-card idle" aria-live="polite">
-      <div class="summary-icon">●</div><div><strong id="operationSummaryTitle">Carregando ambiente</strong><p id="operationSummaryMessage">Verificando conexões e operações anteriores.</p></div>
-    </section>
-
+    <header><img src="../assets/icon.png" alt=""><div><h1>RB Project Bridge</h1><p>Origem limitada → workspace GitHub-first → verificação → evolução livre</p></div><span id="version" class="badge"></span></header>
+    <section id="operationSummary" class="summary-card idle" aria-live="polite"><div class="summary-icon">●</div><div><strong id="operationSummaryTitle">Carregando ambiente</strong><p id="operationSummaryMessage">Verificando conexões e operações anteriores.</p></div></section>
     <section class="card">
       <div class="section-heading"><div><span class="eyebrow">Etapa 1</span><h2>Conexões</h2></div><p>Uma autorização válida é reutilizada. O navegador só será aberto quando faltar uma permissão.</p></div>
       <div class="connection-grid">
-        <div class="connection-card"><div class="row"><button id="base44Login">Conectar Base44</button><span id="base44Status" class="status disconnected">Não conectado</span></div><small>Origem do produto e do snapshot verificável.</small><div id="base44AuthBox" class="auth-box hidden" aria-live="polite"><strong>Autorize a Base44</strong><p>Confirme este código:</p><code id="base44DeviceCode">—</code><div class="row auth-actions"><button id="copyBase44Code" type="button">Copiar</button><button id="openBase44Device" type="button">Abrir autorização</button></div></div></div>
-        <div class="connection-card"><div class="row"><button id="githubLogin">Conectar GitHub</button><span id="githubStatus" class="status disconnected">Não conectado</span></div><small>Destino privado, histórico, branches de segurança e revisão.</small><div id="githubAuthBox" class="auth-box hidden" aria-live="polite"><strong>Autorize o GitHub</strong><p>Use este código:</p><code id="githubDeviceCode">—</code><div class="row auth-actions"><button id="copyGitHubCode" type="button">Copiar</button><button id="openGitHubDevice" type="button">Abrir autorização</button></div></div></div>
+        <div class="connection-card"><div class="row"><button id="base44Login">Conectar Base44</button><span id="base44Status" class="status disconnected">Não conectado</span></div><small>Origem piloto do produto e do snapshot verificável.</small><div id="base44AuthBox" class="auth-box hidden" aria-live="polite"><strong>Autorize a Base44</strong><p>Confirme este código:</p><code id="base44DeviceCode">—</code><div class="row auth-actions"><button id="copyBase44Code" type="button">Copiar</button><button id="openBase44Device" type="button">Abrir autorização</button></div></div></div>
+        <div class="connection-card"><div class="row"><button id="githubLogin">Conectar GitHub</button><span id="githubStatus" class="status disconnected">Não conectado</span></div><small>Ativo canônico, histórico, branches de segurança e continuidade.</small><div id="githubAuthBox" class="auth-box hidden" aria-live="polite"><strong>Autorize o GitHub</strong><p>Use este código:</p><code id="githubDeviceCode">—</code><div class="row auth-actions"><button id="copyGitHubCode" type="button">Copiar</button><button id="openGitHubDevice" type="button">Abrir autorização</button></div></div></div>
       </div>
     </section>
-
     <section class="card">
       <div class="section-heading"><div><span class="eyebrow">Etapa 2</span><h2>Cliente, produto e pasta</h2></div><p>Identifique quem receberá o ativo. Para projetos próprios, use seu nome ou “Projeto próprio”.</p></div>
-      <div class="grid two">
-        <label>Cliente ou proprietário<input id="clientName" placeholder="Empresa, pessoa ou Projeto próprio"></label>
-        <label>Responsável pelo recebimento<input id="deliveryOwner" placeholder="Nome ou equipe responsável"></label>
-        <label>Projeto Base44<select id="project"></select></label>
-        <label>Pasta de entrega<div class="row field-row"><input id="output" readonly placeholder="Selecione uma pasta"><button id="chooseOutput">Selecionar</button></div></label>
-      </div>
+      <div class="grid two"><label>Cliente ou proprietário<input id="clientName" placeholder="Empresa, pessoa ou Projeto próprio"></label><label>Responsável pelo recebimento<input id="deliveryOwner" placeholder="Nome ou equipe responsável"></label><label>Projeto Base44<select id="project"></select></label><label>Pasta de entrega<div class="row field-row"><input id="output" readonly placeholder="Selecione uma pasta"><button id="chooseOutput">Selecionar</button></div></label></div>
     </section>
-
     <section class="card">
-      <div class="section-heading"><div><span class="eyebrow">Etapa 3</span><h2>Pacote contratado e destino</h2></div><p>Escolha o resultado que será entregue ao cliente. O Bridge não chamará um diagnóstico ou sandbox de migração completa.</p></div>
-      <div class="grid two">
-        <label>Pacote contratado<select id="deliveryPackage"><option value="preservation">Diagnóstico e preservação</option><option value="sandbox">Sandbox executável</option><option value="workspace" selected>Workspace evolutivo — recomendado</option><option value="production">Migração completa e homologação</option></select></label>
-        <label>Arquitetura de destino<select id="targetProfile"><option value="supabase-cloud-static" selected>Supabase Cloud + hospedagem web</option><option value="supabase-self-hosted">Supabase próprio ou local</option><option value="aws-custom">AWS customizado — blueprint</option><option value="repository-only">Somente código e documentação</option></select></label>
-      </div>
+      <div class="section-heading"><div><span class="eyebrow">Etapa 3</span><h2>Resultado desejado e destino</h2></div><p>Escolha o resultado real. O Bridge não chama extração visual de migração funcional.</p></div>
+      <div class="grid two"><label>Pacote contratado<select id="deliveryPackage"><option value="preservation">Diagnóstico e preservação</option><option value="sandbox">Sandbox executável</option><option value="workspace" selected>Workspace evolutivo — recomendado</option><option value="production">Migração completa e homologação</option></select></label><label>Arquitetura de destino<select id="targetProfile"><option value="supabase-cloud-static" selected>Supabase Cloud + hospedagem web</option><option value="supabase-self-hosted">Supabase próprio ou local</option><option value="aws-custom">AWS customizado — blueprint</option><option value="repository-only">Somente código e documentação</option></select></label></div>
       <input id="deliveryMode" type="hidden" value="standalone-supabase">
       <div class="delivery-definition"><div><strong>Promessa do pacote</strong><p id="packagePromise"></p></div><div><strong>O cliente recebe</strong><p id="packageReceives"></p></div><div><strong>Destino</strong><p id="targetSummary"></p></div></div>
       <div id="migrationScope" class="scope-box"><strong>Itens previstos no escopo comercial</strong><p>Marque o que deverá ser planejado e homologado. A marcação não significa que já foi migrado.</p><div class="scope-grid"><label><input id="scopeData" type="checkbox"> Dados históricos</label><label><input id="scopeUsers" type="checkbox"> Usuários e autenticação</label><label><input id="scopeStorage" type="checkbox"> Arquivos e storage</label><label><input id="scopeIntegrations" type="checkbox"> Funções e integrações</label><label><input id="scopeDeployment" type="checkbox"> Deploy, domínio e operação</label></div></div>
-      <div id="pipeline" class="pipeline">
-        <div data-step="export"><span>1</span><strong>Preservar</strong><small>Backup fiel, sanitizado e verificável</small></div>
-        <div data-step="standalone"><span>2</span><strong>Isolar</strong><small>Remover dependências reconhecidas da Base44</small></div>
-        <div data-step="supabase"><span>3</span><strong>Preparar</strong><small>Adapter, schema, sandbox e workspace</small></div>
-        <div data-step="build"><span>4</span><strong>Validar</strong><small>Build, Chromium, contratos e prontidão</small></div>
-        <div data-step="github-publish"><span>5</span><strong>Empacotar</strong><small>GitHub, ZIP, handoff, aceite e backlog</small></div>
-      </div>
-      <p class="hint">Migração completa é um estágio de projeto: só será aprovada após dados, usuários, storage, integrações e implantação contratados passarem pelo aceite funcional.</p>
+      <div id="pipeline" class="pipeline"><div data-step="export"><span>1</span><strong>Preservar</strong><small>Backup fiel, sanitizado e verificável</small></div><div data-step="standalone"><span>2</span><strong>Normalizar</strong><small>Retirar dependências conhecidas da origem</small></div><div data-step="supabase"><span>3</span><strong>Conectar</strong><small>Schema, autenticação, banco e workspace</small></div><div data-step="build"><span>4</span><strong>Verificar</strong><small>Build, runtime, testes funcionais e defeitos</small></div><div data-step="github-publish"><span>5</span><strong>Entregar</strong><small>GitHub, ZIP, evidências, aceite e backlog</small></div></div>
+      <p class="hint">Migração completa só é aprovada quando autenticação, banco, dados, integrações e implantação contratados possuem evidências vigentes.</p>
     </section>
-
     <section class="card">
-      <div class="section-heading"><div><span class="eyebrow">Etapa 4</span><h2>Custódia e destino seguro</h2></div><p>O repositório deve ficar sob controle do cliente ou ser transferido no handoff. O Bridge preserva o histórico antes de qualquer atualização.</p></div>
-      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Destino<select id="repoChoice"><option value="">Conecte o GitHub para carregar</option></select></label></div>
-      <label id="newRepoLabel" class="hidden">Nome do novo repositório<input id="repoName" placeholder="meu-produto"></label>
-      <div id="repoSyncStatus" class="info-box"><strong>Seleção inteligente</strong><span>Escolha um repositório existente ou selecione “Criar novo”.</span></div>
-      <label>Descrição<input id="description" placeholder="Aplicação independente preparada pelo RB Project Bridge"></label>
-      <div class="info-box secure"><strong>Reutilização segura</strong><span>O destino será privado. Antes de atualizar, o estado atual é preservado em branches datadas. Nenhuma branch é excluída.</span></div>
-      <label class="authorization"><input type="checkbox" id="authorization"> Confirmo que o proprietário autorizou a atualização deste destino</label>
+      <div class="section-heading"><div><span class="eyebrow">Etapa 4</span><h2>Custódia e destino seguro</h2></div><p>O GitHub é o ativo canônico. A origem e os ambientes de evolução tornam-se conectores do fluxo.</p></div>
+      <div class="grid two"><label>Conta GitHub<select id="owner"></select></label><label>Destino<select id="repoChoice"><option value="">Conecte o GitHub para carregar</option></select></label></div><label id="newRepoLabel" class="hidden">Nome do novo repositório<input id="repoName" placeholder="meu-produto"></label><div id="repoSyncStatus" class="info-box"><strong>Seleção inteligente</strong><span>Escolha um repositório existente ou selecione “Criar novo”.</span></div><label>Descrição<input id="description" placeholder="Workspace independente preparado pelo RB Project Bridge"></label><div class="info-box secure"><strong>Reutilização segura</strong><span>O destino será privado. Antes de atualizar, o estado atual é preservado em branches datadas. Nenhuma branch é excluída.</span></div><label class="authorization"><input type="checkbox" id="authorization"> Confirmo que o proprietário autorizou a atualização deste destino</label>
     </section>
-
     <section class="card execution-card">
-      <div class="section-heading"><div><span class="eyebrow">Etapa 5</span><h2>Gerar evidências e pacote do cliente</h2></div><p>A operação produz o resultado técnico, mede o pacote contratado e gera os documentos de entrega e aceite.</p></div>
-      <div id="resumeCard" class="resume-card hidden"><div><strong id="resumeTitle">Entrega pendente</strong><p id="resumeMessage"></p></div><span>Checkpoint disponível</span></div>
-      <div id="completedCard" class="resume-card hidden"><div><strong id="completedTitle">Última operação disponível</strong><p id="completedMessage"></p></div><span>Preview reconstruível</span></div>
+      <div class="section-heading"><div><span class="eyebrow">Etapa 5</span><h2>Executar, verificar e entregar</h2></div><p>A operação produz o workspace, mede o resultado real e mantém um ledger de evidências e defeitos.</p></div>
+      <div id="resumeCard" class="resume-card hidden"><div><strong id="resumeTitle">Entrega pendente</strong><p id="resumeMessage"></p></div><span>Checkpoint disponível</span></div><div id="completedCard" class="resume-card hidden"><div><strong id="completedTitle">Última operação disponível</strong><p id="completedMessage"></p></div><span>Reteste disponível</span></div>
       <div class="row action-row"><button id="start" class="primary">Preparar workspace e entregar</button><button id="retryLast" class="secondary hidden">Continuar do ponto salvo</button><button id="cancel" class="ghost" disabled>Cancelar</button></div>
-      <div id="result" class="result-panel idle" aria-live="polite"><strong id="resultTitle">Pronto para iniciar</strong><p id="resultMessage">Preencha as etapas acima. O resultado e a próxima ação aparecerão aqui.</p><div id="resultMeta" class="result-meta"></div></div>
-      <div id="resultActions" class="row result-actions hidden"><button id="openPreview" class="primary">Abrir preview</button><button id="repairPreview" class="secondary">Recriar e validar preview</button><button id="openFolder">Abrir pasta da operação</button><button id="openDelivery" class="secondary">Abrir pacote do cliente</button><button id="openRepo">Abrir destino</button><button id="stopPreview" class="ghost">Parar preview</button></div>
+      <div id="result" class="result-panel idle" aria-live="polite"><strong id="resultTitle">Pronto para iniciar</strong><p id="resultMessage">Preencha as etapas acima. O resultado vigente e a próxima ação aparecerão aqui.</p><div id="resultMeta" class="result-meta"></div></div>
+      <div id="resultActions" class="row result-actions hidden"><button id="openPreview" class="primary">Abrir preview</button><button id="repairPreview" class="secondary">Recriar e validar preview</button><button id="openFolder">Abrir pasta da operação</button><button id="openDelivery" class="secondary">Abrir pacote</button><button id="openRepo">Abrir destino</button><button id="stopPreview" class="ghost">Parar preview</button></div>
       <details id="logDetails" class="technical-details"><summary>Ver detalhes técnicos</summary><pre id="log"></pre></details>
-
-      <section id="operationDecision" class="operation-decision hidden" aria-live="polite">
-        <div class="operation-decision-header"><div><span class="eyebrow">Fechamento e continuidade</span><h3 id="decisionTitle">Estado atual da operação</h3><p id="decisionSubtitle"></p></div></div>
-        <div id="decisionStatusGrid" class="decision-status-grid"></div>
-        <div class="decision-section"><h4>O que pode ser feito agora</h4><div id="decisionGuidance" class="decision-guidance"></div></div>
-        <div class="decision-section"><h4>Escopo selecionado x homologado</h4><p>Esta matriz mostra exatamente o que foi marcado antes da operação e o que já possui evidência.</p><div class="decision-table-wrap"><table class="decision-table"><thead><tr><th>Item</th><th>Escopo</th><th>Estado</th><th>Interpretação</th></tr></thead><tbody id="decisionScopeBody"></tbody></table></div></div>
-        <div class="decision-section"><h4>Registrar homologações</h4><p>O registro atualiza os relatórios locais. O GitHub não é alterado automaticamente.</p><div id="decisionValidations" class="validation-grid"></div></div>
-        <div class="decision-section"><h4>Próximos passos obrigatórios</h4><div id="decisionNextActions"></div></div>
-        <div class="decision-section"><h4>Como evoluir sem refazer a migração</h4><div id="decisionEvolution" class="evolution-grid"></div></div>
-        <div class="decision-footer"><p id="decisionPackageState" class="package-state"></p><div class="decision-footer-actions"><button id="openWorkspaceDecision" class="secondary">Abrir workspace evolutivo</button><button id="openPlanDecision">Abrir plano de execução</button><button id="openExtensionDecision">Abrir pedido de extensão</button><button id="regeneratePackageDecision" class="primary">Recalcular e gerar pacote</button></div></div>
-      </section>
+      <section id="operationDecision" class="operation-decision hidden" aria-live="polite"><div class="operation-decision-header"><div><span class="eyebrow">Estado vigente e continuidade</span><h3 id="decisionTitle">Estado atual da operação</h3><p id="decisionSubtitle"></p></div></div><div id="decisionStatusGrid" class="decision-status-grid"></div><div class="decision-section"><h4>O que pode ser feito agora</h4><div id="decisionGuidance" class="decision-guidance"></div></div><div class="decision-section"><h4>Escopo selecionado x homologado</h4><p>A tentativa mais recente prevalece. Reprovação posterior invalida aprovação anterior.</p><div class="decision-table-wrap"><table class="decision-table"><thead><tr><th>Item</th><th>Escopo</th><th>Estado</th><th>Interpretação</th></tr></thead><tbody id="decisionScopeBody"></tbody></table></div></div><div class="decision-section"><h4>Validações, reprovações e bloqueios</h4><p>Aprovações registram evidência; reprovações abrem defeitos e exigem reteste.</p><div id="decisionValidations" class="validation-grid"></div></div><div class="decision-section"><h4>Próximos passos obrigatórios</h4><div id="decisionNextActions"></div></div><div class="decision-section"><h4>Como evoluir sem refazer a captura</h4><div id="decisionEvolution" class="evolution-grid"></div></div><div class="decision-footer"><p id="decisionPackageState" class="package-state"></p><div class="decision-footer-actions"><button id="openWorkspaceDecision" class="secondary">Abrir workspace</button><button id="openPlanDecision">Abrir plano</button><button id="openExtensionDecision">Abrir extensão</button><button id="regeneratePackageDecision" class="primary">Recalcular pacote</button></div></div></section>
     </section>
   </main>
-  <script src="app.js"></script>
-  <script src="repair-preview.js"></script>
-  <script src="readiness-ui.js"></script>
-  <script src="delivery-ui.js"></script>
-  <script src="operation-decision-ui.js"></script>
+  <script src="app.js"></script><script src="repair-preview.js"></script><script src="readiness-ui.js"></script><script src="delivery-ui.js"></script><script src="operation-decision-ui.js"></script>
 </body>
 </html>
