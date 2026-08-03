@@ -12,6 +12,8 @@ O RB Project Bridge suporta várias contas Google simultaneamente. Cada conta co
 4. Crie um OAuth Client ID do tipo **Aplicativo para computador**.
 5. Copie o Client ID para o painel Google Workspace do Bridge. O Client Secret, quando fornecido pelo arquivo JSON do Google, é aceito e armazenado criptografado.
 
+> Atenção operacional: em um aplicativo OAuth externo com status **Teste**, refresh tokens que incluem escopos além de perfil básico normalmente expiram em sete dias. Para uso contínuo, publique o aplicativo e conclua as verificações aplicáveis ou use uma organização Google Workspace/Cloud Identity com a configuração corporativa adequada.
+
 ## 2. Habilitar APIs
 
 Habilite no mesmo projeto:
@@ -60,11 +62,11 @@ Rótulos recomendados:
 
 ## 6. Limitações antes da publicação pública
 
-A integração fica funcional para usuários de teste assim que as APIs e o OAuth Client ID forem configurados. Para oferecer o recurso a clientes externos, será necessário concluir:
+A integração fica funcional para usuários de teste assim que as APIs e o OAuth Client ID forem configurados, porém a expiração de sete dias torna esse modo inadequado para sincronização permanente. Para oferecer o recurso a clientes externos ou operar sem reconexão semanal, será necessário concluir:
 
 - política de privacidade e termos de uso;
 - domínio verificado;
-- revisão dos escopos sensíveis/restritos pelo Google;
+- publicação e revisão dos escopos sensíveis/restritos pelo Google;
 - avaliação de segurança, quando exigida;
 - processo de exclusão e exportação de dados;
 - contrato de tratamento de dados e registro de auditoria.
