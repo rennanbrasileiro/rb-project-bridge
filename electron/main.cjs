@@ -2,7 +2,7 @@
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage } = require('electron');
 const { JsonLogger } = require('./core/logger.cjs');
 const { BridgeError, asBridgeError } = require('./core/errors.cjs');
 const { safeSlug } = require('./core/fs-utils.cjs');
@@ -19,6 +19,9 @@ const { ArchiveService } = require('./services/archive-service.cjs');
 const { ReportService } = require('./services/report-service.cjs');
 const { MigrationService } = require('./services/migration-service.cjs');
 const { OperationControlService } = require('./services/operation-control-service.cjs');
+const { GoogleAccountService } = require('./services/google-account-service.cjs');
+const { GoogleWorkspaceService } = require('./services/google-workspace-service.cjs');
+const { GoogleAiService } = require('./services/google-ai-service.cjs');
 
 let mainWindow;
 let services;
@@ -43,7 +46,27 @@ function createServices() {
   const migration = new MigrationService({ base44, github, security, build, standalone, archive, reports, logger, emit });
   const previewRepair = new PreviewRepairService({ build, standalone, security, reports, logger, emit });
   const operationControl = new OperationControlService({ reports, logger });
-  return { logger, toolchain, base44, github, security, build, standalone, preview, previewRepair, archive, reports, migration, operationControl };
+  const googleAccounts = new GoogleAccountService({ userDataDir, safeStorage, logger, openExternal });
+  const googleWorkspace = new GoogleWorkspaceService({ accounts: googleAccounts, logger });
+  const googleAi = new GoogleAiService({ accounts: googleAccounts, logger });
+  return {
+    logger,
+    toolchain,
+    base44,
+    github,
+    security,
+    build,
+    standalone,
+    preview,
+    previewRepair,
+    archive,
+    reports,
+    migration,
+    operationControl,
+    googleAccounts,
+    googleWorkspace,
+    googleAi,
+  };
 }
 
 function serializeError(error) { const normalized = asBridgeError(error); return { name: normalized.name, code: normalized.code, message: normalized.message, details: normalized.details }; }
@@ -74,12 +97,36 @@ function validateJobRoot(jobRoot) {
 }
 
 function registerIpc() {
-  handle('system:status', async () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch, userData: app.getPath('userData'), toolchain: await services.toolchain.status(), base44: await services.base44.whoami(), github: await services.github.authStatus(), preview: services.preview.status() }));
+  handle('system:status', async () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    userData: app.getPath('userData'),
+    toolchain: await services.toolchain.status(),
+    base44: await services.base44.whoami(),
+    github: await services.github.authStatus(),
+    google: await services.googleAccounts.status(),
+    preview: services.preview.status(),
+  }));
   handle('system:choose-output-directory', async () => { const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? null : result.filePaths[0]; });
   handle('system:open-path', async (target) => { if (typeof target !== 'string' || !path.isAbsolute(target)) throw new BridgeError('INVALID_PATH', 'Somente caminhos locais absolutos podem ser abertos.'); const error = await shell.openPath(target); if (error) throw new BridgeError('OPEN_PATH_FAILED', error); return true; });
   handle('system:open-external', async (url) => { const parsed = new URL(url); if (!['https:', 'http:'].includes(parsed.protocol)) throw new BridgeError('INVALID_URL', 'Somente links HTTP/HTTPS podem ser abertos.'); if (parsed.protocol === 'http:' && !['127.0.0.1', 'localhost'].includes(parsed.hostname)) throw new BridgeError('INVALID_URL', 'Links HTTP são permitidos apenas para preview local.'); await shell.openExternal(parsed.href); return true; });
   handle('base44:status', () => services.base44.whoami()); handle('base44:login', () => services.base44.login()); handle('base44:logout', () => services.base44.logout()); handle('base44:projects', () => services.base44.listProjects());
   handle('github:status', () => services.github.authStatus()); handle('github:login', () => services.github.login()); handle('github:logout', () => services.github.logout()); handle('github:accounts', () => services.github.getAccounts()); handle('github:ensure-delivery-scopes', () => services.github.ensureDeliveryScopes()); handle('github:repositories', (owner, ownerType) => services.github.listRepositories(owner, ownerType)); handle('github:source-status', (input) => services.github.inspectSourceStatus(input));
+  handle('google:status', () => services.googleAccounts.status());
+  handle('google:save-oauth', (input) => services.googleAccounts.saveOAuthConfiguration(input));
+  handle('google:save-ai', (input) => services.googleAccounts.saveAiConfiguration(input));
+  handle('google:connect', (input) => services.googleAccounts.connect(input));
+  handle('google:disconnect', (accountId) => services.googleAccounts.disconnect(accountId));
+  handle('google:inventory', (accountId) => services.googleWorkspace.inventory(accountId));
+  handle('google:search-messages', (accountId, input) => services.googleWorkspace.searchMessages(accountId, input));
+  handle('google:send-message', (accountId, input) => services.googleWorkspace.sendMessage(accountId, input));
+  handle('google:create-document', (accountId, input) => services.googleWorkspace.createDocument(accountId, input));
+  handle('google:test-gemini', () => services.googleAi.testGemini());
+  handle('google:list-notebooks', (accountId) => services.googleAi.listNotebooks(accountId));
+  handle('google:create-notebook', (accountId, input) => services.googleAi.createNotebook(accountId, input));
+  handle('google:add-notebook-sources', (accountId, input) => services.googleAi.addNotebookSources(accountId, input));
+  handle('google:upload-notebook-file', (accountId, input) => services.googleAi.uploadNotebookFile(accountId, input));
   handle('delivery:set-context', (input) => setDeliveryContext(input));
   handle('migration:start', (input) => services.migration.migrate(validateMigrationInput(input)));
   handle('migration:cancel', () => { const migration = services.migration.cancel(); const repair = services.previewRepair.cancel(); return { cancelled: Boolean(migration.cancelled || repair.cancelled) }; });
