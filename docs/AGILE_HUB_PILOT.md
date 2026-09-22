@@ -54,3 +54,9 @@ Ao final do primeiro ciclo devemos ter evidência concreta para separar três gr
 3. **bloqueador específico** — contrato Base44/integrador ainda sem adapter independente.
 
 Todo item do grupo 2 deve, sempre que possível, virar melhoria genérica do Bridge em vez de patch exclusivo do Agile Hub.
+
+## Estado da hospedagem do piloto
+
+O código do `0.6.0-alpha.2` e a imagem Docker estão aprovados pelo CI. O Railway recusou novas provisões por limite do plano da conta, tanto em um projeto novo quanto como serviço isolado dentro de um projeto existente. Nenhum serviço ativo foi alterado.
+
+Uma instância Replit isolada foi criada a partir do mesmo branch, mas a publicação também foi bloqueada pelo limite atual de deployments Autoscale da conta. O bloqueio de teste hospedado neste momento é, portanto, exclusivamente de capacidade de hospedagem da conta; o runtime do piloto permanece versionado, testado e pronto para qualquer host Docker compatível.
