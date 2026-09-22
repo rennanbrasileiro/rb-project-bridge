@@ -6,7 +6,7 @@ Aplicativo para retirar produtos da Base44 com um processo verificável: preserv
 
 A v0.6 mantém o desktop existente e adiciona o **Bridge Cloud**, com dashboard web, OAuth Base44, destino GitLab, worker hospedado, Chromium headless e pacote final para download. O primeiro piloto real dessa trilha é o **Agile Hub**.
 
-Para o roteiro Cloud e a homologação do piloto, consulte [docs/BRIDGE_CLOUD.md](docs/BRIDGE_CLOUD.md).
+Para o roteiro Cloud e a homologação do piloto, consulte [docs/BRIDGE_CLOUD.md](docs/BRIDGE_CLOUD.md) e [docs/AGILE_HUB_PILOT.md](docs/AGILE_HUB_PILOT.md).
 
 ## Pacotes disponíveis
 
