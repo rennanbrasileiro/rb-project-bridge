@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RB Project Bridge Cloud</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">RB HUB · PILOTO</span>
+        <h1>RB Project Bridge Cloud</h1>
+        <p>Base44 → workspace independente → GitLab, com snapshot, validação e pacote de entrega.</p>
+      </div>
+      <div id="healthBadge" class="badge">verificando…</div>
+    </header>
+
+    <section class="panel access">
+      <div>
+        <h2>1. Acesso ao piloto</h2>
+        <p>A chave abaixo protege esta instância. Ela fica somente nesta aba do navegador.</p>
+      </div>
+      <div class="row grow">
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Chave de acesso do piloto">
+        <button id="saveKey">Entrar</button>
+      </div>
+      <div id="accessStatus" class="status muted">Informe a chave para liberar as conexões.</div>
+    </section>
+
+    <div class="grid two">
+      <section class="panel">
+        <div class="step">2</div>
+        <h2>Conectar Base44</h2>
+        <p>Autorize sua conta Base44. O Bridge usa Device Flow e não pede sua senha.</p>
+        <button id="connectBase44" disabled>Conectar Base44</button>
+        <div id="base44Device" class="device hidden">
+          <span>Código de autorização</span>
+          <strong id="base44Code">—</strong>
+          <a id="base44Link" target="_blank" rel="noopener">Abrir Base44 para autorizar</a>
+        </div>
+        <div id="base44Status" class="status muted">Não conectado.</div>
+        <label class="field">
+          <span>Projeto Base44</span>
+          <select id="projectSelect" disabled><option value="">Conecte a Base44 primeiro</option></select>
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="step">3</div>
+        <h2>Conectar GitLab</h2>
+        <p>Use um Personal Access Token com <code>api</code> e <code>write_repository</code>. O token é criptografado no servidor.</p>
+        <label class="field">
+          <span>GitLab</span>
+          <input id="gitlabUrl" value="https://gitlab.com" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Token</span>
+          <input id="gitlabToken" type="password" autocomplete="new-password" placeholder="glpat-…">
+        </label>
+        <button id="connectGitLab" disabled>Validar e conectar</button>
+        <div id="gitlabStatus" class="status muted">Não conectado.</div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="step">4</div>
+      <h2>Destino do Agile Hub</h2>
+      <div class="grid three">
+        <label class="field">
+          <span>Namespace / usuário GitLab</span>
+          <input id="repoOwner" placeholder="seu-usuario-ou-grupo">
+        </label>
+        <label class="field">
+          <span>Repositório</span>
+          <input id="repoName" value="agile-hub" placeholder="agile-hub">
+        </label>
+        <label class="field">
+          <span>Estratégia</span>
+          <select id="repoStrategy">
+            <option value="create">Criar repositório privado</option>
+            <option value="reuse">Reutilizar repositório existente</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid two">
+        <label class="field">
+          <span>Modo</span>
+          <select id="deliveryMode">
+            <option value="standalone-supabase" selected>Workspace independente + Supabase</option>
+            <option value="snapshot">Somente preservação / snapshot</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Pacote de entrega</span>
+          <select id="deliveryPackage">
+            <option value="workspace" selected>Workspace evolutivo</option>
+            <option value="sandbox">Sandbox executável</option>
+            <option value="preservation">Diagnóstico e preservação</option>
+          </select>
+        </label>
+      </div>
+      <label class="consent">
+        <input id="authorization" type="checkbox">
+        <span>Confirmo que sou proprietário do projeto ou estou autorizado a exportá-lo e publicá-lo no GitLab informado.</span>
+      </label>
+      <button id="startJob" class="primary" disabled>Iniciar piloto Base44 → Bridge Cloud → GitLab</button>
+      <div id="startStatus" class="status muted">Conecte Base44 e GitLab, selecione o projeto e confirme a autorização.</div>
+    </section>
+
+    <section id="jobPanel" class="panel hidden">
+      <div class="job-head">
+        <div>
+          <div class="step">5</div>
+          <h2>Execução</h2>
+        </div>
+        <span id="jobState" class="badge">—</span>
+      </div>
+      <div id="jobSummary" class="status"></div>
+      <div id="progress" class="progress"></div>
+      <div class="actions">
+        <a id="repositoryLink" class="button-link hidden" target="_blank" rel="noopener">Abrir repositório GitLab</a>
+        <button id="downloadArtifact" class="hidden">Baixar pacote de entrega</button>
+      </div>
+    </section>
+
+    <footer>
+      <span>RB Project Bridge Cloud v0.6 Pilot</span>
+      <span>Tokens e senhas não são gravados no navegador após a conexão.</span>
+    </footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
