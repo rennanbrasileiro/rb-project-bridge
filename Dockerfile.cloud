@@ -19,4 +19,4 @@ RUN mkdir -p /data && chown -R node:node /app /data
 USER node
 EXPOSE 8080
 
-CMD ["node", "cloud/server.cjs"]
+CMD ["node", "cloud/pilot.cjs"]
