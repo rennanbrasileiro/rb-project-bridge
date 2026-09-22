@@ -50,8 +50,8 @@ async function startStaticServer(root) {
 }
 
 function rootSnapshot(dom) {
-  const match = String(dom || '').match(/<[^>]+id=["']root["'][^>]*>([\s\S]*?)<\/[^>]+>/i);
-  const html = match?.[1]?.trim() || '';
+  const match = String(dom || '').match(/<([a-z][\w:-]*)[^>]*id=["']root["'][^>]*>([\s\S]*?)<\/\1>/i);
+  const html = match?.[2]?.trim() || '';
   const text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   return { rootExists: Boolean(match), rootHtmlLength: html.length, rootTextLength: text.length };
 }
