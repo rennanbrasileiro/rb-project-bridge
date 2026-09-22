@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.6.0-alpha.1 — Bridge Cloud e GitLab
+## 0.6.0-alpha.2 — Bridge Cloud Pilot
+
+- Dashboard web para o primeiro piloto Base44 → Bridge Cloud → GitLab.
+- OAuth Base44 por Device Flow e listagem dos projetos diretamente no Cloud.
+- Seleção automática do Agile Hub quando disponível na conta conectada.
+- Token GitLab validado por `api` + `write_repository`, criptografado em repouso e removido do campo após a conexão.
+- API + worker no mesmo container no modo piloto, eliminando dependência de filesystem compartilhado entre serviços.
+- Download do pacote final diretamente pelo dashboard.
+- Healthcheck, CI dedicado e build obrigatório da imagem Docker.
+- Roteiro de homologação do Agile Hub documentado em `docs/BRIDGE_CLOUD.md`.
+
+## 0.6.0-alpha.1 — Fundação Bridge Cloud
 
 - Primeira trilha hospedável do RB Project Bridge sem dependência do computador do operador.
 - Control plane HTTP com health, capabilities, autenticação Base44 por Device Flow, conexão GitLab e criação/consulta de jobs.
