@@ -19,9 +19,19 @@ async function execute(claim, jobs, connections) {
       onEvent: (event) => jobs.appendProgress(job.id, event).catch(() => null),
     });
     const report = result.report || {};
+    const reportFiles = report.reportFiles || {};
+    const downloadPath = reportFiles.clientDeliveryArchive || report.clientDelivery?.archive?.path || null;
     await jobs.update(job.id, {
       state: 'completed', finishedAt: new Date().toISOString(),
-      result: { status: report.status, checkpoint: report.checkpoint, repository: report.github?.url || report.githubRepository?.htmlUrl || null, reportFiles: report.reportFiles || null, outputDirectory: result.outputDirectory, provider: result.provider },
+      result: {
+        status: report.status,
+        checkpoint: report.checkpoint,
+        repository: report.github?.url || report.githubRepository?.htmlUrl || null,
+        reportFiles,
+        downloadPath,
+        outputDirectory: result.outputDirectory,
+        provider: result.provider,
+      },
     });
     await jobs.purgeSecrets(job.id).catch(() => null);
   } catch (error) {
