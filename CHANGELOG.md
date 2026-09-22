@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0-alpha.1 — Bridge Cloud e GitLab
+
+- Primeira trilha hospedável do RB Project Bridge sem dependência do computador do operador.
+- Control plane HTTP com health, capabilities, autenticação Base44 por Device Flow, conexão GitLab e criação/consulta de jobs.
+- Credenciais Base44 e GitLab criptografadas em repouso com AES-256-GCM; jobs carregam somente referências de conexão.
+- Worker separado da API, com diretório de sessão efêmero por job e limpeza ao término.
+- Validação do preview em Chromium headless sem dependência do Electron/BrowserWindow.
+- Provider GitLab com criação/reuso de projeto privado, preservação de branches, snapshot `base44-source`, push Git e Merge Request.
+- Imagem `Dockerfile.cloud` preparada para API e worker em serviços separados.
+- Documentação `docs/BRIDGE_CLOUD.md` com arquitetura, variáveis, Docker, Railway e blockers para beta multi-tenant.
+- GitHub desktop permanece inalterado; GitLab é o primeiro destino da trilha Cloud Alpha.
+
 ## 0.2.0 — Pipeline Standalone Supabase e preview local
 
 - Fluxo modular: exportar, desacoplar, gerar Supabase, validar build e entregar.

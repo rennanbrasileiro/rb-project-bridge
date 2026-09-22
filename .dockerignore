@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+release
+.bridge-cloud
+*.log
+*.zip
+*.tar
+*.tgz
