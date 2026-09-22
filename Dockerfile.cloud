@@ -1,0 +1,22 @@
+FROM node:20-bookworm-slim
+
+ENV NODE_ENV=production \
+    RB_BRIDGE_CLOUD_DATA=/data \
+    RB_BRIDGE_CHROMIUM=/usr/bin/chromium
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git chromium \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
+COPY electron ./electron
+COPY cloud ./cloud
+COPY docs ./docs
+
+RUN mkdir -p /data && chown -R node:node /app /data
+USER node
+EXPOSE 8080
+
+CMD ["node", "cloud/pilot.cjs"]

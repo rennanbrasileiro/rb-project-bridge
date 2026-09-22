@@ -1,0 +1,60 @@
+name: Bridge Cloud CI
+
+on:
+  pull_request:
+    paths:
+      - 'cloud/**'
+      - 'electron/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'Dockerfile.cloud'
+      - '.github/workflows/bridge-cloud-ci.yml'
+  push:
+    branches:
+      - 'feat/bridge-cloud-v0.6'
+    paths:
+      - 'cloud/**'
+      - 'electron/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'Dockerfile.cloud'
+      - '.github/workflows/bridge-cloud-ci.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Syntax and automated tests
+        run: npm run check
+      - name: Build Bridge Cloud image
+        run: docker build -f Dockerfile.cloud -t rb-project-bridge-cloud:ci .
+      - name: Smoke test running Cloud Pilot container
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_KEY="ci-$(openssl rand -hex 24)"
+          MASTER_KEY="$(openssl rand -base64 32)"
+          docker run -d --name rb-bridge-cloud-ci \
+            -p 18080:8080 \
+            -e RB_BRIDGE_API_KEY="$API_KEY" \
+            -e RB_BRIDGE_MASTER_KEY="$MASTER_KEY" \
+            rb-project-bridge-cloud:ci
+          trap 'docker logs rb-bridge-cloud-ci || true; docker rm -f rb-bridge-cloud-ci >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/health >/tmp/bridge-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"ok":true' /tmp/bridge-health.json
+          curl -fsS http://127.0.0.1:18080/ | grep -q 'RB Project Bridge Cloud'
+          curl -fsS -H "Authorization: Bearer $API_KEY" http://127.0.0.1:18080/v1/capabilities >/tmp/bridge-capabilities.json
+          grep -q '"gitlab"' /tmp/bridge-capabilities.json
+          grep -q '"embeddedWorker":true' /tmp/bridge-capabilities.json
