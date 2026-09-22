@@ -1,19 +1,12 @@
 # RB Project Bridge
 
-Aplicativo desktop para retirar produtos da Base44 com um processo verificável: preservação do ativo, isolamento técnico, sandbox executável, workspace independente, homologação guiada e pacote formal de entrega ao cliente.
+Aplicativo para retirar produtos da Base44 com um processo verificável: preservação do ativo, isolamento técnico, sandbox executável, workspace independente, homologação guiada e pacote formal de entrega ao cliente.
 
-## Versão atual — 0.5.0
+## Versão atual — 0.6.0 Alpha
 
-A v0.5.0 fecha o MVP comercial de ponta a ponta. Além de gerar e publicar o workspace, o Bridge passa a explicar dentro da própria aplicação:
+A v0.6 mantém o desktop existente e adiciona o **Bridge Cloud**, com dashboard web, OAuth Base44, destino GitLab, worker hospedado, Chromium headless e pacote final para download. O primeiro piloto real dessa trilha é o **Agile Hub**.
 
-- o que foi contratado;
-- o que foi efetivamente alcançado;
-- quais itens do escopo foram selecionados;
-- quais homologações já possuem evidência;
-- o que ainda bloqueia o handoff ou a produção;
-- como evoluir o front-end, o backend ou uma nova versão Base44 sem refazer o trabalho aprovado.
-
-O painel **Estado atual e continuidade** aparece abaixo dos detalhes técnicos e funciona também para operações anteriores carregadas do histórico.
+Para o roteiro Cloud e a homologação do piloto, consulte [docs/BRIDGE_CLOUD.md](docs/BRIDGE_CLOUD.md).
 
 ## Pacotes disponíveis
 
@@ -24,11 +17,26 @@ O painel **Estado atual e continuidade** aparece abaixo dos detalhes técnicos e
 
 O Bridge compara o estágio efetivamente alcançado com o pacote contratado. Um React renderizado não é apresentado como migração completa.
 
+## Bridge Cloud
+
+O modo piloto hospedado executa API + worker no mesmo container e oferece uma interface web para:
+
+- conectar Base44 via Device Flow;
+- listar e selecionar o projeto;
+- conectar GitLab por token com `api` + `write_repository`;
+- criar/reutilizar repositório privado;
+- executar snapshot, transformação standalone, build e validação headless;
+- acompanhar o job;
+- abrir o repositório GitLab;
+- baixar o pacote final de entrega.
+
+O desktop continua disponível e não foi substituído.
+
 ## Fechamento guiado da operação
 
 Depois da geração, o Bridge separa três decisões que não podem ser confundidas:
 
-- **Merge do workspace** — o código pode ser incorporado depois da validação visual e da revisão do PR.
+- **Merge do workspace** — o código pode ser incorporado depois da validação visual e da revisão do PR/MR.
 - **Handoff do pacote contratado** — exige as homologações humanas e de escopo registradas no painel.
 - **Produção** — exige nível `production-candidate`, aceite funcional e evidências de implantação e rollback.
 
@@ -43,7 +51,7 @@ As homologações disponíveis são:
 - implantação e operação;
 - aceite funcional e corte.
 
-Cada registro contém estado, responsável, observações e evidência. A alteração recalcula os relatórios localmente e marca o pacote para regeneração. O GitHub não é alterado automaticamente.
+Cada registro contém estado, responsável, observações e evidência. A alteração recalcula os relatórios localmente e marca o pacote para regeneração.
 
 ## Como evoluir sem refazer a migração
 
@@ -71,22 +79,13 @@ Valide migrations, autenticação, CRUD, RLS, realtime, storage e funções. Reg
 
 ### Nova versão Base44
 
-Inicie uma nova operação apontando para o mesmo repositório. O Bridge compara Base44 e GitHub, preserva os dois lados e abre revisão quando ambos evoluíram.
-
-### Obstáculo de outro piloto
-
-Cada pacote gera:
-
-- `CLIENT_DELIVERY/PILOT_EXTENSION_REQUEST.json`;
-- `CLIENT_DELIVERY/PILOT_EXTENSION_REQUEST.md`.
-
-Esses arquivos organizam contratos convertidos, encaminhados, emulados, não suportados e bloqueadores de produção. O objetivo é transformar obstáculos reutilizáveis em correções genéricas do Bridge, evitando patches escondidos apenas no projeto do cliente.
+Inicie uma nova operação apontando para o mesmo repositório. O Bridge compara Base44 e Git, preserva os dois lados e abre revisão quando ambos evoluíram.
 
 ## O que o cliente recebe
 
 A operação standalone gera:
 
-- repositório GitHub privado, preservado e versionado;
+- repositório privado, preservado e versionado;
 - ZIP verificável da entrega com arquivo SHA-256;
 - código standalone e snapshot Base44 em branch própria;
 - preview local quando aplicável;
@@ -100,8 +99,6 @@ A operação standalone gera:
 - `PILOT_EXTENSION_REQUEST.json` e `.md`;
 - relatórios de runtime, segurança e prontidão.
 
-O manifesto agora contém a matriz **escopo selecionado x homologado**, a verificação do pacote contratado e a decisão atual de handoff.
-
 ## Processo de uma entrega comercial
 
 1. **Definir o contrato** — registrar pacote, destino, funcionalidades, dados, usuários, arquivos, integrações e implantação incluídos.
@@ -111,7 +108,7 @@ O manifesto agora contém a matriz **escopo selecionado x homologado**, a verifi
 5. **Converter** — gerar adapter, schema, RLS, migrations, funções preparadas e workspace.
 6. **Validar tecnicamente** — instalar em cópia isolada, compilar, abrir em Chromium e bloquear contratos desconhecidos.
 7. **Evoluir o produto** — corrigir interface ou backend no workspace migrado, sem editar a Base44 desnecessariamente.
-8. **Homologar conforme o pacote** — registrar no Bridge as evidências de banco, dados, usuários, storage, integrações e ambiente real.
+8. **Homologar conforme o pacote** — registrar evidências de banco, dados, usuários, storage, integrações e ambiente real.
 9. **Recalcular e empacotar** — atualizar manifesto, plano, checklist, backlog, ZIP e checksum.
 10. **Transferir custódia, aceitar e cortar** — colocar contas sob controle do cliente, testar rollback e somente então desligar a Base44.
 
@@ -162,11 +159,11 @@ Nunca é aprovada apenas pelo build. Exige evidências separadas para dados, usu
 
 Leia [THREAT_MODEL.md](docs/THREAT_MODEL.md) antes de uso comercial.
 
-## Limite congelado do MVP
+## Limite do Alpha Cloud
 
-O Bridge é o plano de controle da migração: preserva, converte, valida, registra evidências e empacota. Ele não é um editor de código, uma IDE ou um executor de chaves arbitrárias. A evolução do produto ocorre no workspace e no repositório entregue; o Bridge volta a ser usado para revalidação, nova origem Base44, homologação e handoff.
+O modo hospedado atual é um **piloto**, não o SaaS multi-tenant final. Antes da comercialização pública em escala, o roadmap inclui autenticação por organização, fila transacional, object storage, secret manager gerenciado, retenção automática, observabilidade central e workers efêmeros por job.
 
-## Desenvolvimento do Bridge
+## Desenvolvimento
 
 Requisitos: Node.js 20.19 ou superior e Windows 10/11, Linux ou macOS.
 
@@ -176,7 +173,11 @@ npm run check
 npm start
 ```
 
-O pipeline valida sintaxe, 80 testes automatizados, empacotamento Windows, OAuth no executável, checksums e artefatos.
+Cloud pilot:
+
+```bash
+npm run cloud:pilot
+```
 
 ## Licença
 
