@@ -219,37 +219,54 @@ class MigrationService {
       if (repository.private === false) throw new BridgeError('REPOSITORY_NOT_PRIVATE', 'A entrega foi interrompida porque o repositório não está privado.');
       this.checkpoint(report, 'repository-ready');
 
-      if (resolved.reused) {
+      const existingDefaultRef = resolved.reused
+        ? await this.github.getBranchRef(repository, defaultBranch, { signal })
+        : null;
+      report.githubRepository.initiallyEmpty = !existingDefaultRef?.object?.sha;
+      if (resolved.reused && existingDefaultRef?.object?.sha) {
         report.previousDefaultBranch = await this.github.preserveBranch(repository, defaultBranch, { prefix: `${defaultBranch}-before-standalone`, signal });
         report.previousSnapshotBranch = await this.github.preserveBranch(repository, 'base44-source', { prefix: 'base44-source-before-refresh', signal });
         if (!report.previousDefaultBranch) throw new BridgeError('REPOSITORY_BACKUP_FAILED', `Não foi possível preservar a branch ${defaultBranch} antes da atualização.`);
+      } else if (report.githubRepository.initiallyEmpty) {
+        report.notes.push('Repositório GitHub sem commits: não existe branch anterior para preservar. O primeiro commit será realizado na main antes do snapshot.');
       }
 
       report.publishPlan = publishPlanFor(report, repository, timestamp);
-      report.sourceManifest.snapshotPublishedAt = new Date().toISOString();
-      await writeJson(path.join(snapshotDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
-      await writeJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
-      report.snapshot = await this.github.publish({
-        directory: snapshotDir,
-        repository,
-        commitMessage: 'Snapshot sanitizado da exportação Base44',
-        signal,
-        branch: 'base44-source',
-        force: resolved.reused,
-      });
-      this.checkpoint(report, 'snapshot-published');
-      await this.persistReport(report, [jobRoot, repositoryDir]);
-
-      report.sourceManifest.deliveredAt = new Date().toISOString();
-      await writeJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
-      report.github = await this.github.publish({
-        directory: repositoryDir,
-        repository,
-        commitMessage: report.publishPlan.commitMessage,
-        signal,
-        branch: report.publishPlan.branch,
-        force: report.publishPlan.force,
-      });
+      const publishSnapshot = async () => {
+        report.sourceManifest.snapshotPublishedAt = new Date().toISOString();
+        await writeJson(path.join(snapshotDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
+        report.snapshot = await this.github.publish({
+          directory: snapshotDir,
+          repository,
+          commitMessage: 'Snapshot sanitizado da exportação Base44',
+          signal,
+          branch: 'base44-source',
+          force: Boolean(resolved.reused && !report.githubRepository.initiallyEmpty),
+        });
+        this.checkpoint(report, 'snapshot-published');
+        await this.persistReport(report, [jobRoot, repositoryDir]);
+      };
+      const publishWorkspace = async () => {
+        report.sourceManifest.deliveredAt = new Date().toISOString();
+        await writeJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
+        report.github = await this.github.publish({
+          directory: repositoryDir,
+          repository,
+          commitMessage: report.publishPlan.commitMessage,
+          signal,
+          branch: report.publishPlan.branch,
+          force: report.githubRepository.initiallyEmpty ? false : report.publishPlan.force,
+        });
+      };
+      // A first push sets GitHub's default branch; create main before base44-source
+      // only for an empty repository. Existing repositories keep the safer snapshot-first flow.
+      if (report.githubRepository.initiallyEmpty) {
+        await publishWorkspace();
+        await publishSnapshot();
+      } else {
+        await publishSnapshot();
+        await publishWorkspace();
+      }
 
       if (report.publishPlan.strategy === 'pull-request') {
         report.pullRequest = await this.github.createPullRequest(repository, {
@@ -344,10 +361,23 @@ class MigrationService {
 
       const timestamp = String(report.startedAt || new Date().toISOString()).replace(/[:.]/g, '-');
       report.publishPlan = publishPlanFor(report, repository, timestamp);
-      if (!report.snapshot?.sha && report.paths?.snapshotDir) {
+      report.sourceManifest = report.sourceManifest || await readJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), {});
+      const publishWorkspace = async () => {
+        report.sourceManifest.deliveredAt = new Date().toISOString();
+        await writeJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
+        report.github = await this.github.publish({
+          directory: repositoryDir,
+          repository,
+          commitMessage: report.publishPlan.commitMessage,
+          signal,
+          branch: report.publishPlan.branch,
+          force: report.githubRepository.initiallyEmpty ? false : report.publishPlan.force,
+        });
+      };
+      const publishSnapshot = async () => {
+        if (report.snapshot?.sha || !report.paths?.snapshotDir) return;
         const snapshotDir = path.resolve(report.paths.snapshotDir);
         await fs.stat(snapshotDir).catch(() => { throw new BridgeError('RETRY_SNAPSHOT_MISSING', 'O snapshot preparado não existe mais.'); });
-        report.sourceManifest = report.sourceManifest || await readJson(path.join(snapshotDir, 'RB-BRIDGE-SOURCE.json'), {});
         report.sourceManifest.snapshotPublishedAt = new Date().toISOString();
         await writeJson(path.join(snapshotDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
         report.snapshot = await this.github.publish({
@@ -356,22 +386,18 @@ class MigrationService {
           commitMessage: 'Snapshot sanitizado da exportação Base44',
           signal,
           branch: 'base44-source',
-          force: Boolean(report.githubRepository.reused),
+          force: Boolean(report.githubRepository.reused && !report.githubRepository.initiallyEmpty),
         });
         report.checkpoint = 'snapshot-published';
+      };
+      if (report.githubRepository.initiallyEmpty) {
+        // If the original attempt already pushed main, do not overwrite it.
+        if (!report.github?.sha) await publishWorkspace();
+        await publishSnapshot();
+      } else {
+        await publishSnapshot();
+        await publishWorkspace();
       }
-
-      report.sourceManifest = report.sourceManifest || await readJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), {});
-      report.sourceManifest.deliveredAt = new Date().toISOString();
-      await writeJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), report.sourceManifest);
-      report.github = await this.github.publish({
-        directory: repositoryDir,
-        repository,
-        commitMessage: report.publishPlan.commitMessage,
-        signal,
-        branch: report.publishPlan.branch,
-        force: report.publishPlan.force,
-      });
       if (report.publishPlan.strategy === 'pull-request' && !report.pullRequest) {
         report.pullRequest = await this.github.createPullRequest(repository, {
           head: report.publishPlan.branch,
