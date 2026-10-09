@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { extractRuntimeUsages, classifyRuntimeUsage, patchGeneratedAdapterSource, applyRuntimeCompatibility } = require('../electron/services/runtime-compatibility-service.cjs');
 
 const adapterFixture = `const demoMode = true;
@@ -53,7 +54,8 @@ test('keeps unsafe service-role connector access blocked', () => {
 test('patches generated adapter with auth, users, functions and observability compatibility', () => {
   const result = patchGeneratedAdapterSource(adapterFixture);
   assert.equal(result.patched, true);
-  assert.match(result.source, /RB_RUNTIME_COMPAT_V3/);
+  assert.match(result.source, /RB_RUNTIME_COMPAT_V4/);
+  assert.match(result.source, /async function rbCountEntity/);
   assert.match(result.source, /const rbCompatibleEntities = new Proxy/);
   assert.match(result.source, /async isAuthenticated/);
   assert.match(result.source, /const rbUsers = \{ inviteUser: rbInviteUser \}/);
@@ -90,4 +92,68 @@ test('prepares FitHub contracts, local workspace and secure invitation function'
   assert.match(await fs.readFile(path.join(root, 'src', 'api', 'base44Client.js'), 'utf8'), /rbInviteUser/);
   assert.match(await fs.readFile(path.join(root, 'src', 'main.jsx'), 'utf8'), /VITE_RB_DEMO_MODE/);
   await fs.rm(root, { recursive: true, force: true });
+});
+
+test('Agile Hub entities.count is classified as converted, including service role', () => {
+  const source = `
+    const all = await base44.entities.DemandIntake.count();
+    const open = await base44.entities.DemandIntake.count({ status: 'new' });
+    const onAnotherEntity = await base44.asServiceRole.entities.Project.count({ active: true });
+  `;
+  const usages = extractRuntimeUsages(source, 'src/pages/NovaDemanda.jsx').map(classifyRuntimeUsage);
+  const counts = usages.filter((entry) => entry.method === 'count');
+  assert.equal(counts.length, 2);
+  assert.ok(counts.every((entry) => entry.support === 'converted'));
+});
+
+test('entities.count supports filtered demo rows and exact remote Supabase counts', async () => {
+  const source = patchGeneratedAdapterSource(adapterFixture).source;
+  const start = source.indexOf('async function rbCountEntity(');
+  const end = source.indexOf('const rbCompatibleEntities =', start);
+  assert.ok(start >= 0 && end > start);
+  const rows = [{ status: 'new' }, { status: 'new' }, { status: 'closed' }];
+  const calls = [];
+  const context = {
+    demoMode: true,
+    supabase: null,
+    demoRows: () => rows,
+    applyFilter: (data, conditions = {}) => data.filter((row) => Object.entries(conditions).every(([key, value]) => row[key] === value)),
+    tableFor: (entity) => entity.toLowerCase(),
+    normalizeField: (field) => field === 'created_date' ? 'created_at' : field,
+  };
+  vm.runInNewContext(source.slice(start, end) + '\nthis.rbCountEntity = rbCountEntity;', context);
+  assert.equal(await context.rbCountEntity('DemandIntake'), 3);
+  assert.equal(await context.rbCountEntity('DemandIntake', { status: 'new' }), 2);
+  assert.equal(await context.rbCountEntity('DemandIntake', { status: 'missing' }), 0);
+
+  const builder = {
+    select(column, opts) { calls.push(['select', column, opts.count, opts.head]); return this; },
+    eq(field, value) { calls.push(['eq', field, value]); return this; },
+    in(field, value) { calls.push(['in', field, value]); return this; },
+    is(field, value) { calls.push(['is', field, value]); return this; },
+    then(resolve, reject) { return Promise.resolve({ count: 7, error: null }).then(resolve, reject); },
+  };
+  context.demoMode = false;
+  context.supabase = { from(table) { calls.push(['from', table]); return builder; } };
+  assert.equal(await context.rbCountEntity('DemandIntake', { status: 'new', created_date: null, system: { $in: ['GDE', 'DEF'] } }), 7);
+  assert.deepEqual(calls, [
+    ['from', 'demandintake'],
+    ['select', 'id', 'exact', true],
+    ['eq', 'status', 'new'],
+    ['is', 'created_at', null],
+    ['in', 'system', ['GDE', 'DEF']],
+  ]);
+});
+
+test('upgrades saved V3 workspace adapter in place without duplicating its runtime', () => {
+  const current = patchGeneratedAdapterSource(adapterFixture).source;
+  const legacy = current.replace('RB_RUNTIME_COMPAT_V4', 'RB_RUNTIME_COMPAT_V3');
+  const upgraded = patchGeneratedAdapterSource(legacy);
+  assert.equal(upgraded.patched, true);
+  assert.equal(upgraded.upgradedFromLegacy, true);
+  assert.match(upgraded.source, /RB_RUNTIME_COMPAT_V4/);
+  assert.doesNotMatch(upgraded.source, /RB_RUNTIME_COMPAT_V3/);
+  assert.equal(upgraded.source.split('const rbCompatibleEntities =').length - 1, 1);
+  assert.equal(upgraded.source.split('async function rbCountEntity(').length - 1, 1);
+  assert.equal(patchGeneratedAdapterSource(upgraded.source).patched, false);
 });
