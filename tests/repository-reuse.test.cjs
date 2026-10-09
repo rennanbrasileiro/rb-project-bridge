@@ -49,3 +49,32 @@ test('36 preserves a branch by creating a new ref without deleting or moving the
     '-f', 'sha=1234567890abcdef',
   ]);
 });
+
+test('GitHub 409 empty-repository response means there is no default branch to back up', async () => {
+  const github = service();
+  github.runGhQuiet = async () => {
+    const error = new Error('gh.exe exited with code 1');
+    error.details = { stderr: 'gh: Git Repository is empty. (HTTP 409)' };
+    throw error;
+  };
+  const repository = { full_name: 'rennanbrasileiro/agile-hub-sefaz' };
+  assert.equal(await github.getBranchRef(repository, 'main'), null);
+  assert.equal(await github.preserveBranch(repository, 'main'), null);
+});
+
+test('GitHub empty repository detected from stdout while permission errors remain fatal', async () => {
+  const github = service();
+  const repository = { full_name: 'rennanbrasileiro/agile-hub-sefaz' };
+  github.runGhQuiet = async () => {
+    const error = new Error('gh.exe exited with code 1');
+    error.details = { stdout: 'Git Repository is empty.', stderr: '' };
+    throw error;
+  };
+  assert.equal(await github.getBranchRef(repository, 'main'), null);
+  github.runGhQuiet = async () => {
+    const error = new Error('gh.exe exited with code 1');
+    error.details = { stderr: 'gh: Resource not accessible by integration (HTTP 403)' };
+    throw error;
+  };
+  await assert.rejects(github.getBranchRef(repository, 'main'), /code 1/);
+});
