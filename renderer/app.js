@@ -123,6 +123,8 @@ async function projects() {
     select.appendChild(option);
   }
   if ($('owner').selectedOptions[0]) await loadRepositories();
+  await refreshRetryAction();
+  if (typeof refreshRepairAction === 'function') await refreshRepairAction();
 }
 
 async function accounts(options = {}) {
@@ -257,7 +259,9 @@ function showResumeCard(candidate) {
 async function refreshRetryAction() {
   try {
     const history = await call(window.rbBridge.migration.history());
-    showResumeCard(history.map(retryableHistoryEntry).find(Boolean) || null);
+    const selectedId = $('project').value;
+    const candidate = selectedId ? history.filter((entry) => String(entry?.project?.id || '') === selectedId).map(retryableHistoryEntry).find(Boolean) : null;
+    showResumeCard(candidate || null);
   } catch { showResumeCard(null); }
 }
 
@@ -360,7 +364,15 @@ $('openBase44Device').onclick = async () => { if (base44DeviceUrl) await call(wi
 $('copyGitHubCode').onclick = () => copyText(githubDeviceCode);
 $('openGitHubDevice').onclick = () => call(window.rbBridge.system.openExternal(GITHUB_DEVICE_URL));
 $('owner').onchange = loadRepositories;
-$('project').onchange = loadRepositories;
+$('project').onchange = async () => {
+  if (!operationRunning && lastResult?.project?.id && String(lastResult.project.id) !== $('project').value) {
+    lastResult = null;
+    configureResultActions(null);
+  }
+  await loadRepositories();
+  await refreshRetryAction();
+  if (typeof refreshRepairAction === 'function') await refreshRepairAction();
+};
 $('repoChoice').onchange = inspectRepositorySelection;
 $('repoName').oninput = inspectRepositorySelection;
 $('chooseOutput').onclick = async () => { const value = await call(window.rbBridge.system.chooseOutputDirectory()); if (value) $('output').value = value; };
