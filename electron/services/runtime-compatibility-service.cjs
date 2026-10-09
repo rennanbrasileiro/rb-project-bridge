@@ -6,7 +6,7 @@ const { listFiles, pathExists, readJson, writeJson } = require('../core/fs-utils
 const { BridgeError } = require('../core/errors.cjs');
 
 const ENTITY_METHOD_SUPPORT = Object.freeze({
-  list: 'converted', filter: 'converted', get: 'converted', create: 'converted', bulkCreate: 'converted', update: 'converted', delete: 'converted', subscribe: 'converted',
+  list: 'converted', filter: 'converted', count: 'converted', get: 'converted', create: 'converted', bulkCreate: 'converted', update: 'converted', delete: 'converted', subscribe: 'converted',
 });
 const AUTH_METHOD_SUPPORT = Object.freeze({
   me: 'converted', updateMe: 'converted', redirectToLogin: 'converted', loginWithProvider: 'converted', logout: 'converted',
@@ -19,8 +19,8 @@ const ANALYTICS_METHOD_SUPPORT = Object.freeze({ track: 'emulated' });
 const FUNCTION_METHOD_SUPPORT = Object.freeze({ invoke: 'bridged', fetch: 'bridged' });
 const CONNECTOR_METHOD_SUPPORT = Object.freeze({ connectAppUser: 'emulated', disconnectAppUser: 'emulated' });
 const SERVICE_CONNECTOR_METHOD_SUPPORT = Object.freeze({ getConnection: 'unsupported', getCurrentAppUserConnection: 'unsupported', getAccessToken: 'unsupported' });
-const COMPATIBILITY_MARKER = 'RB_RUNTIME_COMPAT_V3';
-const LEGACY_COMPATIBILITY_MARKERS = ['RB_RUNTIME_COMPAT_V1', 'RB_RUNTIME_COMPAT_V2'];
+const COMPATIBILITY_MARKER = 'RB_RUNTIME_COMPAT_V4';
+const LEGACY_COMPATIBILITY_MARKERS = ['RB_RUNTIME_COMPAT_V1', 'RB_RUNTIME_COMPAT_V2', 'RB_RUNTIME_COMPAT_V3'];
 
 const SUPPORTED_ENTITY_METHODS = new Set(Object.entries(ENTITY_METHOD_SUPPORT).filter(([, value]) => value !== 'unsupported').map(([key]) => key));
 const SUPPORTED_AUTH_METHODS = new Set(Object.entries(AUTH_METHOD_SUPPORT).filter(([, value]) => value !== 'unsupported').map(([key]) => key));
@@ -121,10 +121,25 @@ function rbSubscribeToEntity(entity, callback) {
   const channel = supabase.channel('rb-bridge-' + table + '-' + suffix).on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => callback(rbNormalizeRealtimeEvent(payload))).subscribe();
   return () => { try { void supabase.removeChannel(channel); } catch {} };
 }
+async function rbCountEntity(entity, filters = {}) {
+  const conditions = filters && typeof filters === 'object' && !Array.isArray(filters) ? filters : {};
+  if (demoMode || !supabase) return applyFilter(demoRows(entity), conditions).length;
+  let query = supabase.from(tableFor(entity)).select('id', { count: 'exact', head: true });
+  for (const [key, value] of Object.entries(conditions)) {
+    const field = normalizeField(key);
+    if (Array.isArray(value)) query = query.in(field, value);
+    else if (value && typeof value === 'object' && Array.isArray(value.$in)) query = query.in(field, value.$in);
+    else if (value === null) query = query.is(field, null);
+    else query = query.eq(field, value);
+  }
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
 const rbCompatibleEntities = new Proxy(entities, {
   get: (_target, entity) => {
     const adapter = entities[entity];
-    return { ...adapter, subscribe: typeof adapter?.subscribe === 'function' ? adapter.subscribe.bind(adapter) : (callback) => rbSubscribeToEntity(String(entity), callback) };
+    return { ...adapter, count: typeof adapter?.count === 'function' ? adapter.count.bind(adapter) : (filters) => rbCountEntity(String(entity), filters), subscribe: typeof adapter?.subscribe === 'function' ? adapter.subscribe.bind(adapter) : (callback) => rbSubscribeToEntity(String(entity), callback) };
   },
 });
 function rbReadLocal(key, fallback = []) { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; } }
@@ -224,14 +239,28 @@ function patchGeneratedAdapterSource(source) {
   if (!text.includes(exportMarker) || !text.includes('export const base44 =')) {
     throw new BridgeError('STANDALONE_ADAPTER_PATCH_FAILED', 'O adapter standalone gerado não possui a estrutura esperada para compatibilidade em tempo de execução.');
   }
-  if (text.includes(COMPATIBILITY_MARKER) && text.includes('export const base44 = rbRuntimeBase44;')) return { source: text, patched: false, upgradedFromLegacy: false };
-  let patched = text;
-  patched = patched.replace(exportMarker, `${runtimeCompatibilitySource()}\n${exportMarker}`);
-  patched = patched.replace(/export const base44 = \{[^\n]+\};?\s*$/m, 'export const base44 = rbRuntimeBase44;');
-  if (!patched.includes('export const base44 = rbRuntimeBase44;')) {
-    throw new BridgeError('STANDALONE_ADAPTER_PATCH_FAILED', 'Não foi possível substituir a exportação do cliente Base44 pelo runtime independente.');
+  if (text.includes(COMPATIBILITY_MARKER) && text.includes('export const base44 = rbRuntimeBase44;')) {
+    return { source: text, patched: false, upgradedFromLegacy: false };
   }
-  return { source: patched, patched: true, upgradedFromLegacy: LEGACY_COMPATIBILITY_MARKERS.some((marker) => text.includes(marker)) };
+
+  const previousMarker = LEGACY_COMPATIBILITY_MARKERS.find((marker) => text.includes('// ' + marker + ': generated by RB Project Bridge.'));
+  let patched = text;
+  if (previousMarker && text.includes('export const base44 = rbRuntimeBase44;')) {
+    const start = patched.indexOf('// ' + previousMarker + ': generated by RB Project Bridge.');
+    const end = patched.indexOf(exportMarker, start);
+    if (start < 0 || end <= start) {
+      throw new BridgeError('STANDALONE_ADAPTER_PATCH_FAILED', 'O bloco de compatibilidade antigo não pôde ser delimitado com segurança.');
+    }
+    patched = patched.slice(0, start) + runtimeCompatibilitySource().trimStart() + '\n' + patched.slice(end);
+  } else {
+    patched = patched.replace(exportMarker, runtimeCompatibilitySource() + '\n' + exportMarker);
+    patched = patched.replace(/export const base44 = \{[^\n]+\};?\s*$/m, 'export const base44 = rbRuntimeBase44;');
+  }
+
+  if (!patched.includes('export const base44 = rbRuntimeBase44;') || !patched.includes(COMPATIBILITY_MARKER)) {
+    throw new BridgeError('STANDALONE_ADAPTER_PATCH_FAILED', 'Não foi possível atualizar a camada de compatibilidade independente.');
+  }
+  return { source: patched, patched: true, upgradedFromLegacy: Boolean(previousMarker) };
 }
 
 function patchDemoServiceWorkerSource(source) {
