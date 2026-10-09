@@ -4,7 +4,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { BridgeError, asBridgeError } = require('../core/errors.cjs');
 const { readJson } = require('../core/fs-utils.cjs');
-const { applyRuntimeCompatibility } = require('./runtime-compatibility-service.cjs');
 
 class PreviewRepairService {
   constructor({ build, standalone, security, reports, logger, emit }) {
@@ -59,9 +58,6 @@ class PreviewRepairService {
         throw new BridgeError('PROJECT_STRUCTURE_INVALID', 'A aplicação salva não passou na validação estrutural.', { issues: inspection.issues });
       }
 
-      // Reapply updated Base44 adapters to the already exported workspace.
-      // This avoids another export and never publishes to GitHub by itself.
-      const runtimeCompatibility = await applyRuntimeCompatibility(repositoryDir);
       const standaloneGate = await this.standalone.verify(repositoryDir);
       const build = await this.build.validateBuild(repositoryDir, {
         consent: true,
@@ -82,7 +78,6 @@ class PreviewRepairService {
       const repairedAt = new Date().toISOString();
       report.paths.previewDir = previewDir;
       report.inspection = inspection;
-      report.runtimeCompatibilityAfterPreviewRepair = runtimeCompatibility;
       report.standaloneGateAfterPreviewRepair = standaloneGate;
       report.build = build;
       report.securityAfterPreviewRepair = security;
