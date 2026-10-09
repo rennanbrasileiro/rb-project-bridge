@@ -359,6 +359,20 @@ class MigrationService {
       this.emit('migration:progress', { step: 'job', status: 'running', message: 'Retomando do ponto salvo; exportação, conversão e build não serão repetidos.' });
       await this.github.ensureDirectoryScopes(repositoryDir, { signal });
 
+      // Older Bridge reports predate the "initiallyEmpty" flag. Reconcile the
+      // actual remote state before resuming; never force-push over new commits.
+      if (typeof report.githubRepository.initiallyEmpty !== 'boolean') {
+        if (report.previousDefaultBranch?.sha) {
+          report.githubRepository.initiallyEmpty = false;
+        } else {
+          const remoteMain = await this.github.getBranchRef(repository, repository.default_branch || 'main', { signal });
+          if (remoteMain?.object?.sha) {
+            throw new BridgeError('RETRY_DESTINATION_CHANGED', 'A branch principal recebeu commits após a tentativa anterior. Revise o destino antes de publicar para evitar sobrescrita.', { remoteSha: remoteMain.object.sha });
+          }
+          report.githubRepository.initiallyEmpty = true;
+        }
+      }
+
       const timestamp = String(report.startedAt || new Date().toISOString()).replace(/[:.]/g, '-');
       report.publishPlan = publishPlanFor(report, repository, timestamp);
       report.sourceManifest = report.sourceManifest || await readJson(path.join(repositoryDir, 'RB-BRIDGE-SOURCE.json'), {});
