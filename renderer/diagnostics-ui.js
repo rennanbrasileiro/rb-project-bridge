@@ -149,8 +149,9 @@
     const steps = document.querySelectorAll('.bridge-step');
     if (steps[4]) steps[4].click();
     logDetails.open = true;
+    const wasOpen = historyDetails.open;
     historyDetails.open = true;
-    void loadHistory();
+    if (wasOpen) void loadHistory();
     historyDetails.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 })();
