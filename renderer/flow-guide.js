@@ -46,6 +46,11 @@
   toggle.type = 'button';
   toggle.setAttribute('aria-pressed', 'false');
   top.append(heading, toggle);
+  const notice = make('div', 'bridge-global-notice hidden');
+  notice.setAttribute('role', 'status');
+  const noticeTitle = make('strong', '', 'Atenção');
+  const noticeMessage = make('p');
+  notice.append(noticeTitle, noticeMessage);
   const nav = make('nav', 'bridge-step-nav');
   nav.setAttribute('aria-label', 'Navegação pelas etapas');
   steps.forEach((step, index) => {
@@ -74,7 +79,7 @@
   next.addEventListener('click', () => goTo(current + 1, true));
   controls.append(previous, next);
   bottom.append(hint, controls);
-  guide.append(top, nav, bottom);
+  guide.append(top, notice, nav, bottom);
   byId('operationSummary').insertAdjacentElement('afterend', guide);
 
   // O processamento deve aparecer ao lado das ações, e não entre as opções comerciais.
@@ -187,6 +192,18 @@
       ? 'Todas as opções estão visíveis. O passo a passo continua disponível sem perder os dados preenchidos.'
       : steps[current].subtitle;
     hint.textContent = statuses[current].hint;
+    // Erros de conexão e autorização vêm do painel final original.
+    // Reexibimos só o aviso, sem mover nem substituir o painel ou seus eventos.
+    const result = byId('result');
+    const showNotice = !expanded && current < 4 && Boolean(result) &&
+      ['error', 'attention', 'running'].some((kind) => result.classList.contains(kind));
+    notice.classList.toggle('hidden', !showNotice);
+    if (showNotice) {
+      notice.classList.toggle('error', result.classList.contains('error'));
+      noticeTitle.textContent = byId('resultTitle')?.textContent || 'Atenção na operação';
+      noticeMessage.textContent = byId('resultMessage')?.textContent || '';
+      notice.setAttribute('role', result.classList.contains('error') ? 'alert' : 'status');
+    }
     toggle.textContent = expanded ? 'Voltar ao passo a passo' : 'Mostrar todas as etapas';
     toggle.setAttribute('aria-pressed', String(expanded));
     previous.hidden = expanded || current === 0;
