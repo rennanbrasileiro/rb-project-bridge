@@ -442,8 +442,10 @@ class GitHubService {
       const encoded = encodeURIComponent(branch);
       return this.parseJson((await this.runGhQuiet(['api', `repos/${repository.full_name}/git/ref/heads/${encoded}`], { timeoutMs: 30_000, signal: options.signal })).stdout);
     } catch (error) {
-      const detail = `${error.message || ''} ${error.details?.stderr || ''}`;
-      if (/404|not found|reference does not exist/i.test(detail)) return null;
+      const detail = `${error.message || ''} ${error.details?.stderr || ''} ${error.details?.stdout || ''}`;
+      // GitHub returns HTTP 409 for an existing repository without any commits.
+      // This is not an authorization failure: the branch simply does not exist yet.
+      if (/404|not found|reference does not exist|git repository is empty/i.test(detail)) return null;
       throw error;
     }
   }

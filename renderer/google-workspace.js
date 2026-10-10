@@ -8,9 +8,9 @@
     if ($('googleWorkspaceCard')) return;
     const section = document.createElement('section');
     section.id = 'googleWorkspaceCard';
-    section.className = 'card';
+    section.className = 'card google-optional-card';
     section.innerHTML = `
-      <div class="section-heading"><div><span class="eyebrow">Integração transversal</span><h2>Google Workspace, Gemini e notebooks</h2></div><p>Conecte várias contas sem substituir as existentes. Credenciais ficam somente no cofre criptografado deste computador.</p></div>
+      <div class="section-heading"><div><span class="eyebrow">Recursos independentes</span><h2>Google Workspace, Gemini e notebooks</h2></div><p>Estes recursos NÃO são necessários para extrair produtos da Base44 ou publicar no GitHub. Conecte apenas contas que você administra ou que o titular autorizou. Configurações ficam no cofre criptografado deste computador.</p></div>
       <div class="google-status-row"><span id="googleVaultStatus" class="status disconnected">Verificando cofre</span><span id="googleOauthStatus" class="status disconnected">OAuth pendente</span><span id="geminiStatus" class="status disconnected">Gemini API pendente</span><span id="notebookStatus" class="status disconnected">Notebook pendente</span></div>
       <div class="google-grid">
         <div class="google-panel">
@@ -23,7 +23,7 @@
         </div>
         <div class="google-panel">
           <h3>2. Adicionar conta Google</h3>
-          <p>Repita o processo para a conta pessoal e para <strong>rbhubsolucoes@gmail.com</strong>.</p>
+          <p>Conecte uma ou mais contas Google, somente se precisar utilizar esses serviços. Cada conta requer autorização do próprio titular no navegador; nada é importado da Base44 ou do GitHub.</p>
           <label>Rótulo da conta<input id="googleAccountLabel" placeholder="Pessoal ou RB HUB"></label>
           <div class="google-service-grid">
             <label><input data-google-service type="checkbox" value="gmail" checked> Gmail</label>
@@ -54,9 +54,26 @@
         </div>
       </div>
       <div id="googleNotice" class="google-notice idle" aria-live="polite">Integração pronta para configurar.</div>`;
-    const cards = document.querySelectorAll('main > section.card');
-    if (cards[0]?.nextSibling) cards[0].parentNode.insertBefore(section, cards[0].nextSibling);
-    else document.querySelector('main')?.appendChild(section);
+    // A integração Google é opcional, independente da migração principal.
+    // Não mover/recriar controles: o módulo já referencia os mesmos IDs e handlers.
+    const disclosure = document.createElement('details');
+    disclosure.id = 'googleIntegrationDetails';
+    disclosure.className = 'google-integration-details';
+    const summary = document.createElement('summary');
+    summary.className = 'google-integration-summary';
+    const title = document.createElement('strong');
+    title.textContent = 'Integrações adicionais · Google e Gemini';
+    const state = document.createElement('span');
+    state.id = 'googleIntegrationState';
+    state.textContent = 'Opcional · não interfere nas migrações';
+    summary.append(title, state);
+    const body = document.createElement('div');
+    body.className = 'google-integration-body';
+    while (section.firstChild) body.appendChild(section.firstChild);
+    disclosure.append(summary, body);
+    section.appendChild(disclosure);
+    // Sempre depois do fluxo de migração; o usuário não precisa passar por este painel.
+    document.querySelector('main')?.appendChild(section);
   }
 
   async function invoke(promise) {
@@ -204,6 +221,12 @@
   function applyStatus(status) {
     state.status = status;
     state.accounts = status.accounts || [];
+    const count = state.accounts.length;
+    const stateText = $('googleIntegrationState');
+    if (stateText) stateText.textContent = count
+      ? `${count} conta(s) Google conectada(s) · opcional`
+      : status.configured ? 'OAuth configurado · nenhuma conta conectada'
+        : 'Não configurado · não necessário para Base44 → GitHub';
     $('googleVaultStatus').textContent = status.encryptionAvailable ? 'Cofre do sistema disponível' : 'Cofre seguro indisponível';
     $('googleVaultStatus').className = `status ${status.encryptionAvailable ? 'connected' : 'disconnected'}`;
     $('googleOauthStatus').textContent = status.configured ? 'OAuth configurado' : 'OAuth pendente';
@@ -304,7 +327,11 @@
       refreshNotebookAccounts();
       const observer = new MutationObserver(refreshNotebookAccounts);
       observer.observe($('googleAccounts'), { childList: true });
-    } catch (error) { setNotice(error.message, 'error'); }
+    } catch (error) {
+      setNotice(error.message, 'error');
+      const indicator = $('googleIntegrationState');
+      if (indicator) indicator.textContent = 'Status Google indisponível · migração independente';
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });

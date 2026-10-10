@@ -1,0 +1,20 @@
+.bridge-guide-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+.bridge-diagnostic-shortcut{font-size:13px;padding:9px 12px;white-space:nowrap}
+.bridge-log-toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:11px 0}
+.bridge-log-toolbar button{font-size:12px;padding:8px 10px}
+.bridge-log-notice{flex:1;color:#a9bdc7;font-size:12px;line-height:1.4;min-width:180px}
+.bridge-history-details{margin-top:13px;padding:13px 15px;border:1px solid #355668;border-radius:11px;background:#091d27}
+.bridge-history-details>summary{cursor:pointer;font-weight:700;color:#c5e3ee}
+.bridge-history-details>summary:focus-visible{outline:2px solid #8bdcc2;outline-offset:3px}
+.bridge-history-description{margin:12px 0;color:#adc2cd;font-size:13px;line-height:1.5}
+.bridge-history-controls{display:flex;gap:13px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bridge-history-controls button{font-size:12px;padding:8px 10px}
+.bridge-history-count{font-size:12px;color:#a9bdc7}
+.bridge-history-list{display:grid;gap:7px;max-height:390px;overflow:auto;padding-right:5px}
+.bridge-history-item{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:11px 12px;background:#071820;border:1px solid #294654;border-radius:9px}
+.bridge-history-info{display:grid;gap:4px;min-width:0}
+.bridge-history-info strong{font-size:13px;overflow-wrap:anywhere}
+.bridge-history-info small{color:#a9bdc7;line-height:1.4;overflow-wrap:anywhere}
+.bridge-history-item button{font-size:12px;flex-shrink:0;padding:8px 10px}
+.bridge-history-empty{margin:6px;color:#a9bdc7}
+@media(max-width:700px){.bridge-guide-actions{justify-content:flex-start}.bridge-history-item{align-items:flex-start;flex-direction:column}}
